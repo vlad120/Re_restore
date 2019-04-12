@@ -1,0 +1,121 @@
+{% extends "Base.html" %}
+
+{% block style %}
+    <style type="text/css">
+        .content {
+            margin-left: 50px;
+        }
+        .base-title {
+            margin-top: 40px;
+            margin-bottom: 20px;
+            color: orange;
+        }
+        .form-fields {
+            width: 300px;
+        }
+    </style>
+{% endblock %}
+
+
+{% block content %}
+    <h3 class="content base-title">Регистрация</h3>
+    <form method="post" novalidate>
+        {{ form.hidden_tag() }}
+        <p class="content">
+            <div class="input-group mb-3 content form-fields">
+                <div class="input-group-prepend">
+                    <span class="input-group-text">#</span>
+                </div>
+                {{ form.name(class_="form-control", placeholder="Имя") }}<br>
+            </div>
+            {% if name_error %}
+                <div class="alert alert-danger content" role="alert">
+                    {{ name_error }}
+                </div>
+            {% else %}
+                {% for error in form.name.errors %}
+                    <div class="alert alert-danger content" role="alert">
+                        {{ error }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        </p>
+        <p class="content">
+            <div class="input-group mb-3 content form-fields">
+                <div class="input-group-prepend">
+                    <span class="input-group-text">§</span>
+                </div>
+                {{ form.surname(class_="form-control", placeholder="Фамилия") }}<br>
+            </div>
+            {% if surname_error %}
+                <div class="alert alert-danger content" role="alert">
+                    {{ surname_error }}
+                </div>
+            {% else %}
+                {% for error in form.surname.errors %}
+                    <div class="alert alert-danger content" role="alert">
+                        {{ error }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        </p>
+        <p class="content">
+            <div class="input-group mb-3 content form-fields">
+                <div class="input-group-prepend">
+                    <span class="input-group-text">@</span>
+                </div>
+                {{ form.email(class_="form-control", placeholder="E-Mail") }}<br>
+            </div>
+            {% if email_error %}
+                <div class="alert alert-danger content" role="alert">
+                    {{ email_error }}
+                </div>
+            {% else %}
+                {% for error in form.email.errors %}
+                    <div class="alert alert-danger content" role="alert">
+                        {{ error }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        </p>
+        <p class="content">
+            <div class="input-group mb-3 content form-fields">
+                <div class="input-group-prepend">
+                    <span class="input-group-text">$</span>
+                </div>
+                {{ form.login(class_="form-control", placeholder="Логин") }}<br>
+            </div>
+            {% if login_error %}
+                <div class="alert alert-danger content" role="alert">
+                    {{ login_error }}
+                </div>
+            {% else %}
+                {% for error in form.login.errors %}
+                    <div class="alert alert-danger content" role="alert">
+                        {{ error }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        </p>
+        <p class="content">
+            <div class="input-group mb-3 content form-fields">
+                <div class="input-group-prepend">
+                    <span class="input-group-text">&</span>
+                </div>
+                {{ form.password(class_="form-control", placeholder="Пароль") }}<br>
+            </div>
+            {% if password_error %}
+                <div class="alert alert-danger content" role="alert">
+                    {{ password_error }}
+                </div>
+            {% else %}
+                {% for error in form.password.errors %}
+                    <div class="alert alert-danger content" role="alert">
+                        {{ error }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        </p>
+        <p class="content">{{ form.submit(class_="btn btn-info") }}</p>
+    </form>
+{% endblock %}

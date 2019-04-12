@@ -1,0 +1,65 @@
+{% extends "Base.html" %}
+
+{% block style %}
+    <style type="text/css">
+        .content {
+            margin-left: 50px;
+        }
+        .base-title {
+            margin-top: 40px;
+            margin-bottom: 20px;
+            color: orange;
+        }
+        .form-fields {
+            width: 500px;
+        }
+    </style>
+{% endblock %}
+
+
+{% block content %}
+    <h3 class="content base-title">Добавление новости</h3>
+    <form method="post" novalidate>
+        {{ form.hidden_tag() }}
+        <p class="content">
+            <div class="input-group mb-3 content form-fields">
+                <div class="input-group-prepend">
+                    <span class="input-group-text">#</span>
+                </div>
+                {{ form.title(class_="form-control", placeholder="Название") }}<br>
+            </div>
+            {% if data['errors']['title'] %}
+                <div class="alert alert-danger content" role="alert">
+                    {{ data['errors']['title'] }}
+                </div>
+            {% else %}
+                {% for error in form.title.errors %}
+                <div class="alert alert-danger content" role="alert">
+                        {{ error }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        </p>
+        <p class="content">
+            <div class="input-group content form-fields">
+                <div class="input-group-prepend">
+                    <span class="input-group-text">%</span>
+                </div>
+                {{ form.content(class_="form-control", placeholder="Содержание") }}
+            </div>
+            {% if data['errors']['content'] %}
+                <div class="alert alert-danger content" role="alert">
+                    {{ data['errors']['content'] }}
+                </div>
+            {% else %}
+                {% for error in form.content.errors %}
+                    <div class="alert alert-danger content" role="alert">
+                        {{ error }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        </p>
+        <p class="content">{{ form.submit(class_="btn btn-info") }}</p>
+    </form>
+
+{% endblock %}

@@ -1,0 +1,22 @@
+{% extends "Base.html" %}
+
+{% block style %}
+    <style type="text/css">
+        .content {
+            margin-left: 50px;
+        }
+        .base-title {
+            margin-top: 50px;
+            color: darkorange;
+            font-style: italic;
+        }
+        .error {
+            color: darkred;
+        }
+    </style>
+{% endblock %}
+
+
+{% block content %}
+    <h1 class="content base-title"><b><p class="error">{{ data['type'] }}</p> {{ data['message'] }}</b></h1>
+{% endblock %}

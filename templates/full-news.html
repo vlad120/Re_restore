@@ -1,0 +1,30 @@
+{% extends "Base.html" %}
+
+{% block style %}
+    <style type="text/css">
+        .content {
+            margin-left: 50px;
+        }
+        .base-title {
+            margin-top: 40px;
+            color: darkgreen;
+            font-style: italic;
+        }
+        .info{ color: cadetblue; }
+        .news-content {
+            color: #333a40;
+            font-size: 18px;
+            white-space: pre-wrap;
+            margin-right: 30px;
+        }
+    </style>
+{% endblock %}
+
+
+{% block content %}
+    <h1 class="content base-title"><b>Новость №{{ data['news']['id'] }}</b></h1>
+    <h5 class="content info">Дата публикации: {{ data['news']['date'] }}</h5>
+    <h5 class="content info">ID автора: {{ data['news']['author_id'] }}</h5>
+    <br>
+    <pre class="content news-content">{{ data['news']['content'] }}</pre>
+{% endblock %}

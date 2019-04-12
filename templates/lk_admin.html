@@ -1,0 +1,50 @@
+{% extends "Base.html" %}
+
+{% block style %}
+    <style type="text/css">
+        .content { margin-left: 50px; }
+        .base-title {
+            margin-top: 40px;
+            color: midnightblue;
+        }
+        .info {
+            padding-top: 15px;
+            font-size: 20px;
+            text-align: center;
+            width: 300px;
+            background-color: steelblue;
+            color: yellow;
+            font-style: italic;
+        }
+        .card { margin-bottom: 10px; }
+        .card-content { display: inline-block; }
+        .btn-dark { float: right; }
+    </style>
+{% endblock %}
+
+
+{% block content %}
+    <h3 class="content base-title">Личный кабинет</h3>
+    <br>
+    <div class="content">
+        <div class="badge badge-primary text-wrap content info">
+            <h2>Admin</h2>
+        </div>
+        <br>
+        {% if data['users'] %}
+            <h4 class="base-title">Список пользователей:</h4>
+            <br>
+            {% for user in data['users'] %}
+                <div class="card w-75 content">
+                    <div class="card-body">
+                        <h5 class="card-title card-content"><i><span style="color: midnightblue">id</span> <b>{{ user['id'] }}</b></i> - <span style="color: forestgreen">{{ user['name'] }} {{ user['surname'] }}</span></h5>
+                        <form method="post" style="float: right">
+                            <input type="hidden" class="card-content" name="delete_user" value="{{ user['id'] }}">
+                            <button type="submit" class="btn btn-dark card-content">Удалить пользователя</button>
+                        </form>
+                    </div>
+                </div>
+            {% endfor %}
+        {% endif %}
+    </div>
+{% endblock %}
