@@ -30,37 +30,38 @@
 
 
 {% block content %}
-    <h3 class="content base-title">Личный кабинет</h3>
-    <br>
-    <div class="content">
-        <div class="badge badge-primary text-wrap content info">
-            <p>Имя: {{ data['user']['name'] }}</p>
-            <p>Фамилия: {{ data['user']['surname'] }}</p>
-            <p>Логин: {{ data['user']['login'] }}</p>
-            <p>E-Mail: {{ data['user']['email'] }}</p>
-            <p>ID: {{ authorization }}</p>
-        </div>
-        <br>
-        <h4 class="base-title">Мои новости</h4>
-        <br>
-        <form method="post">
-            <input type="hidden" name="add_news">
-            <button type="submit" class="btn btn-success content">Написать новость</button>
-        </form>
-        <br>
-        <br>
-        {% for news in data['news'] %}
-            <div class="card content">
-                <h5 class="card-header date">{{ news['date'] }}</h5>
-                <div class="card-body">
-                    <h5 class="card-title">{{ news['title'] }}</h5>
-                    <p class="card-text">{{ news['content'] }}</p>
-                    <form method="post">
-                        <input type="hidden" name="delete_news" value="{{ news['id'] }}">
-                        <button type="submit" class="btn btn-dark">Удалить</button>
-                    </form>
-                </div>
-            </div>
-        {% endfor %}
-    </div>
+<!--    <h3 class="content base-title">Личный кабинет</h3>-->
+<!--    <br>-->
+<!--    <div class="content">-->
+<!--        <div class="badge badge-primary text-wrap content info">-->
+<!--            <p>Имя: {{ data['user']['name'] }}</p>-->
+<!--            <p>Фамилия: {{ data['user']['surname'] }}</p>-->
+<!--            <p>Логин: {{ data['user']['login'] }}</p>-->
+<!--            <p>E-Mail: {{ data['user']['email'] }}</p>-->
+<!--            <p>ID: {{ authorization }}</p>-->
+<!--        </div>-->
+<!--        <br>-->
+<!--        <h4 class="base-title">Мои новости</h4>-->
+<!--        <br>-->
+<!--        <form method="post">-->
+<!--            <input type="hidden" name="add_news">-->
+<!--            <button type="submit" class="btn btn-success content">Написать новость</button>-->
+<!--        </form>-->
+<!--        <br>-->
+<!--        <br>-->
+<!--        {% for news in data['news'] %}-->
+<!--            <div class="card content">-->
+<!--                <h5 class="card-header date">{{ news['date'] }}</h5>-->
+<!--                <div class="card-body">-->
+<!--                    <h5 class="card-title">{{ news['title'] }}</h5>-->
+<!--                    <p class="card-text">{{ news['content'] }}</p>-->
+<!--                    <form method="post">-->
+<!--                        <input type="hidden" name="delete_news" value="{{ news['id'] }}">-->
+<!--                        <button type="submit" class="btn btn-dark">Удалить</button>-->
+<!--                    </form>-->
+<!--                </div>-->
+<!--            </div>-->
+<!--        {% endfor %}-->
+<!--    </div>-->
+Проверка
 {% endblock %}

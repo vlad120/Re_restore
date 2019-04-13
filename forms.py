@@ -1,14 +1,8 @@
 from flask_wtf import FlaskForm
-from wtforms import StringField, PasswordField, SubmitField, TextAreaField
+from wtforms import StringField, PasswordField, SubmitField, TextAreaField, FileField
 from wtforms.validators import DataRequired
 
 data_required = "Это поле обязательно."
-
-
-class SignInForm(FlaskForm):
-    login = StringField(validators=[DataRequired(data_required)])
-    password = PasswordField(validators=[DataRequired(data_required)])
-    submit = SubmitField('Войти')
 
 
 class SignUpForm(FlaskForm):
@@ -17,6 +11,7 @@ class SignUpForm(FlaskForm):
     email = StringField(validators=[DataRequired(data_required)])
     login = StringField(validators=[DataRequired(data_required)])
     password = PasswordField(validators=[DataRequired(data_required)])
+    photo = FileField()
     submit = SubmitField('Зарегистрироваться')
 
 

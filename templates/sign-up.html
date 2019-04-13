@@ -3,22 +3,31 @@
 {% block style %}
     <style type="text/css">
         .content {
-            margin-left: 50px;
+            margin-left: 60px;
         }
         .base-title {
-            margin-top: 40px;
+            margin-top: 30px;
             margin-bottom: 20px;
-            color: orange;
+            color: darkgreen;
         }
         .form-fields {
             width: 300px;
+        }
+        .error {
+            margin-left: 70px;
+            font-size: 14px;
+            color: orangered;
+            margin-bottom: 5px;
+            margin-top: -10px;
         }
     </style>
 {% endblock %}
 
 
 {% block content %}
-    <h3 class="content base-title">Регистрация</h3>
+    <br>
+    <br>
+    <h2 class="content base-title"><b>Регистрация</b></h2>
     <form method="post" novalidate>
         {{ form.hidden_tag() }}
         <p class="content">
@@ -29,14 +38,14 @@
                 {{ form.name(class_="form-control", placeholder="Имя") }}<br>
             </div>
             {% if name_error %}
-                <div class="alert alert-danger content" role="alert">
+                <p class="error">
                     {{ name_error }}
-                </div>
+                </p>
             {% else %}
                 {% for error in form.name.errors %}
-                    <div class="alert alert-danger content" role="alert">
+                    <p class="error">
                         {{ error }}
-                    </div>
+                    </p>
                 {% endfor %}
             {% endif %}
         </p>
@@ -48,14 +57,14 @@
                 {{ form.surname(class_="form-control", placeholder="Фамилия") }}<br>
             </div>
             {% if surname_error %}
-                <div class="alert alert-danger content" role="alert">
+                <p class="error">
                     {{ surname_error }}
-                </div>
+                </p>
             {% else %}
                 {% for error in form.surname.errors %}
-                    <div class="alert alert-danger content" role="alert">
+                    <p class="error">
                         {{ error }}
-                    </div>
+                    </p>
                 {% endfor %}
             {% endif %}
         </p>
@@ -64,17 +73,17 @@
                 <div class="input-group-prepend">
                     <span class="input-group-text">@</span>
                 </div>
-                {{ form.email(class_="form-control", placeholder="E-Mail") }}<br>
+                {{ form.email(class_="form-control", placeholder="E-Mail", type="email") }}<br>
             </div>
             {% if email_error %}
-                <div class="alert alert-danger content" role="alert">
+                <p class="error">
                     {{ email_error }}
-                </div>
+                </p>
             {% else %}
                 {% for error in form.email.errors %}
-                    <div class="alert alert-danger content" role="alert">
+                    <p class="error">
                         {{ error }}
-                    </div>
+                    </p>
                 {% endfor %}
             {% endif %}
         </p>
@@ -86,14 +95,14 @@
                 {{ form.login(class_="form-control", placeholder="Логин") }}<br>
             </div>
             {% if login_error %}
-                <div class="alert alert-danger content" role="alert">
+                <p class="error">
                     {{ login_error }}
-                </div>
+                </p>
             {% else %}
                 {% for error in form.login.errors %}
-                    <div class="alert alert-danger content" role="alert">
+                    <p class="error">
                         {{ error }}
-                    </div>
+                    </p>
                 {% endfor %}
             {% endif %}
         </p>
@@ -105,14 +114,14 @@
                 {{ form.password(class_="form-control", placeholder="Пароль") }}<br>
             </div>
             {% if password_error %}
-                <div class="alert alert-danger content" role="alert">
+                <p class="error">
                     {{ password_error }}
-                </div>
+                </p>
             {% else %}
                 {% for error in form.password.errors %}
-                    <div class="alert alert-danger content" role="alert">
+                    <p class="error">
                         {{ error }}
-                    </div>
+                    </p>
                 {% endfor %}
             {% endif %}
         </p>

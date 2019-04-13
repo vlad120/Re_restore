@@ -26,7 +26,7 @@
     <title>{{title}}</title>
 </head>
 <body>
-    <nav class="navbar navbar-expand navbar-light bg-light">
+    <nav class="navbar navbar-expand navbar-light bg-light" style="min-width: 750px;">
         <a class="navbar-brand" href="/re_restore" style="color: navy; font-size: 25px;"><em><b><span style="color: forestgreen">Re</span>_restrore</b></em></a>
         <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavAltMarkup"
                 aria-controls="navbarNavAltMarkup" aria-expanded="false" aria-label="Toggle navigation">
@@ -34,8 +34,8 @@
         </button>
         <div class="collapse navbar-collapse flex-row-reverse" id="navbarNavAltMarkup1">
             <div class="navbar-nav">
-                {% if authorization %}
-                    <a class="nav-item nav-link" href="/lk">{{ login }}</a>
+                {% if authorization['id'] %}
+                    <a class="nav-item nav-link" href="/lk">{{ authorization['login'] }}</a>
                     <div class="nav-item nav-link">/</div>
                     <a class="nav-item nav-link" href="/sign-out">Выход</a>
                 {% else %}
@@ -71,7 +71,7 @@
                             {% endif %}
 
                             <div class="form-check"  style="margin-bottom: 10px;">
-                                <input type="checkbox" class="form-check-input" id="dropdownCheck">
+                                <input type="checkbox" class="form-check-input" id="dropdownCheck" name="remember_me" {% if data['last']['remember'] %}checked{% endif %}>
                                 <label class="form-check-label" for="dropdownCheck">
                                     Запомнить меня
                                 </label>
@@ -104,14 +104,14 @@
         <a href="/basket" class="btn btn-success">Корзина</a>
     </div>
 
-    <div style="min-height: 60vh">
+    <div style="min-height: 95vh; min-width: 750px;">
         {% block content %}{% endblock %}
     </div>
 
     <br>
     <br>
     <br>
-    <div style="background-color: #333a40; font-size: 16px; width: 100%; height: 110px; float: end; position: absolute;">
+    <div style="background-color: #333a40; font-size: 16px; width: 100%; height: 110px; float: end; min-width: 750px;">
         <pre style="display: inline-block; float: left; color: white; margin-left: 50px; margin-top: 30px;">
 Контакты:    +7 (999) 876-54-32
              re_restore@mail.ru

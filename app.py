@@ -2,10 +2,11 @@ from flask import Flask, render_template, redirect, request, make_response, json
 from flask_restful import reqparse, Api, Resource
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import check_password_hash, generate_password_hash
-from forms import SignInForm, SignUpForm, AddNewsForm
+from forms import SignUpForm, AddNewsForm
 from datetime import date
 import requests
 from copy import deepcopy
+from os import remove
 
 host = '127.0.0.1'
 port = 8080
@@ -32,87 +33,95 @@ DATA = {'menu_items': [{'name': 'tablets',
                                      'other': None,
                                      'any': False}},
         'last': {'login': '',
-                 'password:': ''}
+                 'password:': '',
+                 'remember': True}
         }
 
 
-def get_authorization():
-    a = Authorization.query.filter_by(ip=request.remote_addr).first()
-    return a.id if a else None
+def get_authorization(tmp_id=None, tmp_login=None, tmp_password=None):
+    return {'id': tmp_id if tmp_id else request.cookies.get('userID'),
+            'login': tmp_login if tmp_login else request.cookies.get('userLogin'),
+            'password': tmp_password if tmp_password else request.cookies.get('userPassword')}
 
 
-def add_authorization(user_id):
-    a = Authorization(ip=request.remote_addr, id=user_id)
-    db.session.add(a)
-    db.session.commit()
+def verify_curr_admin():
+    a = get_authorization()
+    if a and a['id'] == admin_id and a['login'] == admin_login and \
+            a['password'] == admin_password:
+        return True
+    return False
 
 
-def del_authorization(user_id=None, curr=False):
-    if curr:
-        a = Authorization.query.filter_by(ip=request.remote_addr).first()
-    elif user_id:
-        a = Authorization.query.filter_by(id=user_id).first()
-    db.session.delete(a)
-    db.session.commit()
+def verify_authorization(admin=False):
+    if admin and verify_curr_admin():
+        return True
+    a = get_authorization()
+    try:
+        user = UserModel.query.filter_by(id=a['id']).first()
+        if user and a['login'] == user.login and \
+                check_password_hash(user.password, a['password']):
+            return True
+        sign_out()
+        return False
+    except:
+        sign_out()
+        return False
 
 
-def render(template, **kwargs):
-    authorization = get_authorization()
-    if authorization == admin_id:
-        return render_template(template, authorization=admin_id, login=admin_login, **kwargs)
-    elif authorization:
-        user_login = UserModel.query.filter_by(id=authorization).first().login
-        return render_template(template, authorization=authorization, login=user_login, **kwargs)
+def render(template, a=None, **kwargs):
+    authorization = a if a else get_authorization()
+    if authorization:
+        return render_template(template, authorization=authorization, **kwargs)
     else:
         return render_template(template, **kwargs)
 
 
-class Authorization(db.Model):
-    ip = db.Column(db.CHAR(15), primary_key=True, nullable=False)
-    id = db.Column(db.Integer, nullable=False)
-
-
-class NewsModel(db.Model):
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    title = db.Column(db.String(70), unique=False, nullable=False)
-    content = db.Column(db.String(4000), unique=False, nullable=False)
-    author_id = db.Column(db.Integer, unique=False, nullable=False)
-    date = db.Column(db.String(10), unique=False, nullable=False)
+class GoodsModel(db.Model):
+    id = db.Column(db.Integer, unique=True, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(70), nullable=False)
+    description = db.Column(db.String(2000), nullable=False)
+    short_description = db.Column(db.String(200), nullable=False)
+    price = db.Column(db.Float, nullable=False)
+    count = db.Column(db.Integer, nullable=False)
+    photos = db.Column(db.String(500))
 
     def __repr__(self):
-        return '<News {} {}>'.format(self.id, self.title)
+        return '<Goods {} {} {}руб {}шт>'.format(self.id, self.name, self.price, self.count)
 
-    def to_dict(self, id_req=True, title_req=True, content_req=False,
-                short_content_req=False, author_id_req=False, date_req=True):
+    def to_dict(self, id_req=True, name_req=True, description_req=False,
+                short_description_req=True, price_req=True, count_req=False, photos_req=False):
         d = dict()
         if id_req:
             d['id'] = self.id
-        if title_req:
-            d['title'] = self.title
-        if content_req:
-            d['content'] = self.content
-        if short_content_req:
-            d['content'] = self.content[:150] + " ..." if len(self.content) > 150 else self.content
-        if author_id_req:
-            d['author_id'] = self.author_id
-        if date_req:
-            d['date'] = self.date
+        if name_req:
+            d['name'] = self.name
+        if description_req:
+            d['description'] = self.description
+        if short_description_req:
+            d['short_description'] = self.short_description
+        if price_req:
+            d['price'] = self.price
+        if count_req:
+            d['count'] = self.count
+        if photos_req:
+            d['photos'] = [photo.strip() for photo in self.photos.split(';')]
         return d
 
 
 class UserModel(db.Model):
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    name = db.Column(db.String(80), unique=False, nullable=False)
-    surname = db.Column(db.String(80), unique=False, nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
+    id = db.Column(db.Integer, unique=True, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(80), nullable=False)
+    surname = db.Column(db.String(80), nullable=False)
+    email = db.Column(db.String(120), nullable=False)
     login = db.Column(db.String(80), unique=True, nullable=False)
-    password = db.Column(db.String(200), unique=False, nullable=False)
+    password = db.Column(db.String(200), nullable=False)
+    photo = db.Column(db.String(100), nullable=False, default="NoPhoto.jpg")
 
     def __repr__(self):
-        return '<Student {} {} {} {}>'.format(self.id, self.username, self.name, self.surname)
+        return '<User {} {} {} {}>'.format(self.id, self.login, self.name, self.surname)
 
-    def to_dict(self, id_req=True, login_req=True, name_req=False,
-                surname_req=False, email_req=False):
+    def to_dict(self, id_req=True, name_req=False, surname_req=False,
+                email_req=False, login_req=True, photo_req=False):
         d = dict()
         if id_req:
             d['id'] = self.id
@@ -124,7 +133,108 @@ class UserModel(db.Model):
             d['email'] = self.email
         if login_req:
             d['login'] = self.login
+        if photo_req:
+            d['photo'] = self.photo
         return d
+
+
+class Authorization(Resource):
+    # Аутентификация
+    def get(self):
+        errors = {'already_authorized': False,
+                  'password': None,
+                  'login': None,
+                  'other': None}
+        try:
+            if verify_authorization(admin=True):
+                errors['already_authorized'] = True
+                return make_success(False, errors=errors)
+
+            parser = reqparse.RequestParser()
+            for arg in ('login', 'password'):
+                parser.add_argument(arg, required=True)
+            args = parser.parse_args()
+            login = args['login']
+            password = args['password']
+
+            if not (login.strip() and password.strip()):
+                for field, filled in (('login', login.strip()), ('password', password.strip())):
+                    if not filled:
+                        errors[field] = "Поле дожно быть заполнено."
+                return make_success(False, errors=errors)
+
+            if login == admin_login and password == admin_password:
+                return make_success(admin_id, errors=errors)
+
+            user = UserModel.query.filter_by(login=login).first()
+            if user:
+                if check_password_hash(user.password, password):
+                    return make_success(user.id, errors=errors)
+                errors['password'] = "Неправильный пароль."
+            else:
+                errors['login'] = "Логин не найден в системе."
+        except Exception as e:
+            print("Authorization Error:\t", e)
+            errors['other'] = "Ошибка сервера."
+        return make_success(False, errors=errors)
+
+    # Регистрация
+    def post(self):
+        errors = {'name': None,
+                  'surname': None,
+                  'email': None,
+                  'login': None,
+                  'password': None,
+                  'photo': None,
+                  'other': None}
+        try:
+            authorization = get_authorization()
+            if authorization['id']:
+                return make_success(False)
+
+            parser = reqparse.RequestParser()
+            for arg in ('name', 'surname', 'email', 'login', 'password', 'photo'):
+                parser.add_argument(arg)
+            args = parser.parse_args()
+
+            if (args['login'] == admin_login or
+                    UserModel.query.filter_by(login=args['login']).first()):
+                errors['login'] = "Логин занят другим пользователем. Придумайте другой"
+
+            if len(args['name']) > 80:
+                errors['name'] = "Слишком длинное имя (максимум 80 символов)"
+            if len(args['surname']) > 80:
+                errors['surname'] = "Слишком длинная фамилия (максимум 80 символов)"
+            if len(args['login']) > 80 and not errors['login']:
+                errors['login'] = "Слишком длинный логин (максимум 80 символа)"
+            if len(args['password']) > 100:
+                errors['password'] = "Слишком длинный пароль (максимум 100 символов)"
+            if len(args['password']) < 3:
+                errors['password'] = "Слишком простой пароль (не менее 3 символов)"
+
+            if any(err for err in errors.values()):
+                return make_success(False, errors=errors)
+
+            new_user = UserModel(**args)
+            db.session.add(new_user)
+            db.session.commit()
+
+            if args['photo']:
+                photo_name = None
+                try:
+                    photo_name = '{}.{}'.format(str(new_user.id),
+                                                request.files['file'].filename.split('.')[-1])
+                    args['photo'].save('static/profiles/' + photo_name)
+                    new_user.photo = photo_name
+                except:
+                    if photo_name:
+                        remove(photo_name)
+                    new_user.photo = "NoPhoto.jpg"
+            return make_success(new_user.id, errors=errors)
+        except Exception as e:
+            print("Registration Error:\t", e)
+            errors['other'] = "Ошибка сервера."
+            return make_success(False, errors=errors)
 
 
 class News(Resource):
@@ -223,7 +333,7 @@ class User(Resource):
 
     def delete(self, user_id):
         user_id = int(user_id)
-        if get_authorization() == admin_id:
+        if get_authorization()['id'] == admin_id:
             exist = user_exist(user_id)
             if not exist[0]:
                 return success(False, 'User not found')
@@ -258,9 +368,9 @@ class UsersList(Resource):
                              password=generate_password_hash(args['password']))
             db.session.add(user)
             db.session.commit()
-            return success()
+            return make_success()
         except:
-            return success(False)
+            return make_success(False)
 
 
 class PublishNews(Resource):
@@ -268,13 +378,13 @@ class PublishNews(Resource):
               'content': None}
 
     def get(self):
-        authorization = get_authorization()
+        authorization = get_authorization()['id']
         if authorization and authorization != admin_id:
             form = AddNewsForm()
             return self.render(form)
 
     def post(self):
-        authorization = get_authorization()
+        authorization = get_authorization()['id']
         if authorization and authorization != admin_id:
             form = AddNewsForm()
             if form.validate_on_submit():
@@ -304,59 +414,6 @@ class PublishNews(Resource):
         return make_response(render("add-news.html", title="Add News", form=form, data={'errors': self.errors}))
 
 
-class LK(Resource):
-    def get(self):
-        authorization = get_authorization()
-        if authorization == admin_id:
-            data = requests.get('http://{}:{}/{}'.format(host, port, "users")).json()
-            if data['success'] == 'OK':
-                return make_response(render('lk_admin.html', title="LK ADMIN", data=data))
-            return server_error()
-        elif authorization:
-            data = dict()
-            user = UserModel.query.filter_by(id=authorization).first().to_dict(name_req=True,
-                                                                               surname_req=True,
-                                                                               email_req=True)
-            data['user'] = user
-            news = [news.to_dict(content_req=True) for news in NewsModel.query.filter_by(author_id=authorization).all()]
-            data['news'] = reversed(news)
-            return make_response(render("lk.html", title="LK", data=data))
-        return redirect('/sign-in')
-
-    def post(self):
-        authorization = get_authorization()
-        if not authorization:
-            return access_error()
-        args = request.form
-        if 'delete_news' in args:
-            news_id = args['delete_news']
-            exist = news_exist(news_id)
-            if not exist[0]:
-                return exist[1]
-            if NewsModel.query.filter_by(id=news_id).first().author_id == authorization:
-                r = 'http://{}:{}/{}/{}'.format(host, port, "news", news_id)
-                if requests.delete(r).json()['success'] == "OK":
-                    return self.get()
-                return server_error()
-            return access_error()
-        elif 'add_news' in args:
-            if authorization != admin_id:
-                return redirect('/add-news')
-            return access_error()
-        elif 'delete_user' in args:
-            if authorization == admin_id:
-                try:
-                    response = requests.delete('http://{}:{}/{}/{}'.format(host, port,
-                                                                           "users", args['delete_user'])).json()
-                    if response['success'] == 'OK':
-                        return redirect('/lk')
-                    return error(message=response['message'])
-                except:
-                    return server_error()
-            return access_error()
-        return self.get()
-
-
 class SignUp(Resource):
     errors = {'name': None,
               'surname': None,
@@ -365,14 +422,14 @@ class SignUp(Resource):
               'password': None}
 
     def get(self):
-        authorization = get_authorization()
+        authorization = get_authorization()['id']
         if not authorization:
             form = SignUpForm()
             return self.render(form)
         return redirect('/lk')
 
     def post(self):
-        authorization = get_authorization()
+        authorization = get_authorization()['id']
         if not authorization:
             form = SignUpForm()
             if form.validate_on_submit():
@@ -416,70 +473,12 @@ class SignUp(Resource):
         return make_response(render("sign-up.html", title="Sign Up", form=form, data={'errors': self.errors}))
 
 
-class SignIn(Resource):
-    def get(self):
-        response = {'success': False,
-                    'errors': {'already_authorized': False,
-                               'password': None,
-                               'login': None,
-                               'other': None}
-                    }
-        try:
-            if get_authorization():
-                response['errors']['already_authorized'] = True
-                return response
-
-            parser = reqparse.RequestParser()
-            for arg in ('login', 'password'):
-                parser.add_argument(arg, required=True)
-            args = parser.parse_args()
-            login = args['login']
-            password = args['password']
-
-            if login == admin_login and password == admin_password:
-                add_authorization(admin_id)
-                response['success'] = True
-                return response
-
-            user = UserModel.query.filter_by(login=login).first()
-            if user:
-                if check_password_hash(user.password, password):
-                    add_authorization(user.id)
-                    response['success'] = True
-                    return response
-                response['errors']['password'] = "Неправильный пароль."
-            else:
-                response['errors']['login'] = "Логин не найден в системе."
-        except:
-            response['success'] = False
-            response['errors']['other'] = "Ошибка сервера."
-        return response
-
-
-class SignOut(Resource):
-    def get(self):
-        del_authorization(curr=True)
-        return redirect("/news")
-
-
-def success(state=True, message='', **kwargs):
-    data = {'success': 'OK' if state else 'FAIL'}
+def make_success(state=True, message='', **kwargs):
+    data = {'success': state if state else False}
     if message:
         data['message'] = message
     data.update(kwargs)
     return jsonify(data)
-
-
-def user_exist(user_id):
-    if UserModel.query.filter_by(id=user_id).first():
-        return True, None
-    return False, error(404, 'Пользователь {} не найден :('.format(user_id))
-
-
-def news_exist(news_id):
-    if NewsModel.query.filter_by(id=news_id).first():
-        return True, None
-    return False, error(404, 'Новость {} не найдена :('.format(news_id))
 
 
 @app.route('/re_restore', methods=["GET", "POST"])
@@ -517,17 +516,83 @@ def re_restore():
 
     elif request.method == "POST":
         if 'sign-in' in request.form:
-            sign_in(data)
-        return render('index.html', title=t, data=data)
+            return sign_in('index.html', t, data)
 
 
-def sign_in(data):
-    response = get_self_response('/sign-in', data=dict(request.form))
-    if not response['success']:
-        data['errors']['authorization'].update(response['errors'])
-        data['errors']['authorization']['any'] = True
-        data['last']['login'] = request.form['login']
-        data['last']['password'] = request.form['password']
+def sign_in(page, t, data, ready_data=None):
+    if get_authorization()['id']:
+        return redirect('/lk')
+
+    try:
+        response = get_self_response('/authorization', data=ready_data if ready_data else request.form, method='GET')
+        if not response['success']:
+            data['errors']['authorization'].update(response['errors'])
+            data['errors']['authorization']['any'] = True
+            data['last']['login'] = request.form['login']
+            data['last']['password'] = request.form['password']
+            data['last']['remember'] = True if 'remember_me' in request.form else False
+
+        if response['success']:
+            a = get_authorization(response['success'], request.form['login'], request.form['password'])
+            resp = make_response(render(page, a=a, title=t, data=data))
+            resp.set_cookie('userID', str(a['id']))
+            resp.set_cookie('userLogin', str(a['login']))
+            resp.set_cookie('userPassword', str(a['password']))
+
+        resp = make_response(render(page, title=t, data=data))
+        return resp
+    except Exception as e:
+        print("Sign In Error:\t", e)
+        return server_error()
+
+
+@app.route('/sign-out')
+def sign_out():
+    resp = make_response(redirect('/re_restore'))
+    for cookie in ('userID', 'userLogin', 'userPassword'):
+        resp.set_cookie(cookie, '', expires=0)
+    return resp
+
+
+@app.route('/sign-up', methods=["GET", "POST"])
+def sign_up():
+    data = deepcopy(DATA)
+    data['errors']['registration'] = {'name': None,
+                                      'surname': None,
+                                      'email': None,
+                                      'login': None,
+                                      'password': None,
+                                      'photo': None,
+                                      'other': None}
+    if get_authorization()['id']:
+        return redirect('/lk')
+
+    form = SignUpForm()
+    if form.validate_on_submit():
+        ready_data = {'name': form.name.data,
+                      'surname': form.surname.data,
+                      'email': form.email.data,
+                      'login': form.login.data,
+                      'password': form.password.data}
+
+        response = get_self_response('/authorization', data=ready_data, method='POST')
+        if response['success']:
+            return sign_in('/lk', 'Успешно', data, ready_data)
+        else:
+            data['errors']['registration'].update(response['errors'])
+    return render('sign-up.html', t='Регистрация', form=form, data=data)
+
+
+@app.route('/lk', methods=["GET", "POST"])
+def lk():
+    t = "Личный кабинет"
+    verify_authorization()
+    authorization = get_authorization()
+    if authorization['id'] == admin_id:
+        return render('lk_admin.html', title=t, data=DATA)
+    elif authorization:
+        return render("lk.html", title=t, data=DATA)
+    return redirect('/re_restore')
 
 
 def get_self_response(url, data={}, method='GET'):
@@ -545,7 +610,9 @@ def get_self_response(url, data={}, method='GET'):
 
 
 def error(err=520, message='Что-то пошло не так :('):
-    return render('error.html', data={'message': message, 'type': err})
+    data = deepcopy(DATA)
+    data.update({'message': message, 'type': err})
+    return render('error.html', data=data)
 
 
 @app.errorhandler(401)
@@ -572,13 +639,19 @@ def index():
 if __name__ == '__main__':
     db.create_all()
 
-    api.add_resource(SignIn, '/sign-in')
-    api.add_resource(SignUp, '/sign-up')
-    api.add_resource(SignOut, '/sign-out')
+    # new_user = UserModel(name='dfs',
+    #                      surname='erdfscsa',
+    #                      email='resdaafghrgfds',
+    #                      login='vlad',
+    #                      password=generate_password_hash('qwerty'),
+    #                      photo='NoPhoto.jpg')
+    # db.session.add(new_user)
+    # db.session.commit()
+
+    api.add_resource(Authorization, '/authorization')
 
     api.add_resource(UsersList, '/users')
     api.add_resource(User, '/users/<int:user_id>')
-    api.add_resource(LK, '/lk')
     api.add_resource(PublishNews, '/add-news')
 
     app.run(port=port, host=host)
