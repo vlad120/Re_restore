@@ -5,6 +5,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from forms import SignInForm, SignUpForm, AddNewsForm
 from datetime import date
 import requests
+from copy import deepcopy
 
 host = '127.0.0.1'
 port = 8080
@@ -21,6 +22,18 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
 news_sorting = 'DATE'
+
+DATA = {'menu_items': [{'name': 'tablets',
+                        'link': '#'},
+                       {'name': 'Смартфоны',
+                        'link': '#'}],
+        'errors': {'authorization': {'password': None,
+                                     'login': None,
+                                     'other': None,
+                                     'any': False}},
+        'last': {'login': '',
+                 'password:': ''}
+        }
 
 
 def get_authorization():
@@ -404,51 +417,49 @@ class SignUp(Resource):
 
 
 class SignIn(Resource):
-    errors = {'password': None,
-              'login': None}
-
     def get(self):
-        if not get_authorization():
-            form = SignInForm()
-            return self.render(form)
-        return redirect('/lk')
+        response = {'success': False,
+                    'errors': {'already_authorized': False,
+                               'password': None,
+                               'login': None,
+                               'other': None}
+                    }
+        try:
+            if get_authorization():
+                response['errors']['already_authorized'] = True
+                return response
 
-    def post(self):
-        if not get_authorization():
-            form = SignInForm()
-            if form.validate_on_submit():
-                login = form.login.data
-                password = form.password.data
+            parser = reqparse.RequestParser()
+            for arg in ('login', 'password'):
+                parser.add_argument(arg, required=True)
+            args = parser.parse_args()
+            login = args['login']
+            password = args['password']
 
-                if login == admin_login and password == admin_password:
-                    add_authorization(admin_id)
-                    return redirect('/lk')
+            if login == admin_login and password == admin_password:
+                add_authorization(admin_id)
+                response['success'] = True
+                return response
 
-                user = UserModel.query.filter_by(login=login).first()
-                if user:
-                    if check_password_hash(user.password, password):
-                        add_authorization(user.id)
-                        return redirect('/lk')
-                    self.errors['password'] = "Неправильный пароль"
-                else:
-                    self.errors['login'] = "Логин не найден в системе"
-
-            return self.render(form)
-        return redirect('/lk')
-
-    def render(self, form):
-        return make_response(render("sign-in.html", title="Sign in", form=form, data={'errors': self.errors}))
+            user = UserModel.query.filter_by(login=login).first()
+            if user:
+                if check_password_hash(user.password, password):
+                    add_authorization(user.id)
+                    response['success'] = True
+                    return response
+                response['errors']['password'] = "Неправильный пароль."
+            else:
+                response['errors']['login'] = "Логин не найден в системе."
+        except:
+            response['success'] = False
+            response['errors']['other'] = "Ошибка сервера."
+        return response
 
 
 class SignOut(Resource):
     def get(self):
         del_authorization(curr=True)
         return redirect("/news")
-
-
-class Index(Resource):
-    def get(self):
-        return redirect('/re_restore')
 
 
 def success(state=True, message='', **kwargs):
@@ -472,72 +483,69 @@ def news_exist(news_id):
 
 
 @app.route('/re_restore', methods=["GET", "POST"])
-def index():
+def re_restore():
     t = 'Добро пожаловать в Re_restore!'
-    data = {'menu_items': [{'name': 'tablets',
-                            'link': '#'},
-                           {'name': 'Смартфоны',
-                            'link': '#'}],
-            'slides': [url_for('static', filename='main_banners/{}.png'.format(i + 1)) for i in range(4)],
-            'len_slides': 4,
-            'goods': [{'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
-                       'short-description': 'Уникальный планшет, который вы должны купить',
-                       'price': 25000,
-                       'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')},
-                      {'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
-                       'short-description': 'Уникальный планшет, который вы должны купить',
-                       'price': 25000,
-                       'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')},
-                      {'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
-                       'short-description': 'Уникальный планшет, который вы должны купить',
-                       'price': 25000,
-                       'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')},
-                      {'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
-                       'short-description': 'Уникальный планшет, который вы должны купить',
-                       'price': 25000,
-                       'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')},
-                      {'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
-                       'short-description': 'Уникальный планшет, который вы должны купить',
-                       'price': 25000,
-                       'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')},
-                      ],
-            'errors': {'password': None,
-                       'login': None,
-                       'any': False}
-    }
+    data = deepcopy(DATA)
+
+    data.update(
+        {'slides': [url_for('static', filename='main_banners/{}.png'.format(i + 1)) for i in range(4)],
+         'len_slides': 4,
+         'goods': [{'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
+                    'short-description': 'Уникальный планшет, который вы должны купить',
+                    'price': 25000,
+                    'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')},
+                   {'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
+                    'short-description': 'Уникальный планшет, который вы должны купить',
+                    'price': 25000,
+                    'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')},
+                   {'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
+                    'short-description': 'Уникальный планшет, который вы должны купить',
+                    'price': 25000,
+                    'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')},
+                   {'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
+                    'short-description': 'Уникальный планшет, который вы должны купить',
+                    'price': 25000,
+                    'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')},
+                   {'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
+                    'short-description': 'Уникальный планшет, который вы должны купить',
+                    'price': 25000,
+                    'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')}]
+         }
+    )
     if request.method == "GET":
         return render('index.html', title=t, data=data)
 
     elif request.method == "POST":
-        if get_authorization():
-            return redirect('/lk')
-        try:
-            login = request.form['login']
-            password = request.form['password']
+        if 'sign-in' in request.form:
+            sign_in(data)
+        return render('index.html', title=t, data=data)
 
-            if login == admin_login and password == admin_password:
-                add_authorization(admin_id)
-                return redirect('/lk')
 
-            user = UserModel.query.filter_by(login=login).first()
-            if user:
-                if check_password_hash(user.password, password):
-                    add_authorization(user.id)
-                    return redirect('/lk')
-                data['errors']['password'] = "Неправильный пароль"
-                data['errors']['any'] = True
-            else:
-                data['errors']['login'] = "Логин не найден в системе"
-                data['errors']['any'] = True
-        except:
-            if not any(err for err in data['errors'].values()):
-                return server_error()
-        return render("index.html", title=t, data=data)
+def sign_in(data):
+    response = get_self_response('/sign-in', data=dict(request.form))
+    if not response['success']:
+        data['errors']['authorization'].update(response['errors'])
+        data['errors']['authorization']['any'] = True
+        data['last']['login'] = request.form['login']
+        data['last']['password'] = request.form['password']
+
+
+def get_self_response(url, data={}, method='GET'):
+    try:
+        if method == 'GET':
+            return requests.get('http://{}:{}'.format(host, port) + url, json=data).json()
+        if method == 'POST':
+            return requests.post('http://{}:{}'.format(host, port) + url, json=data).json()
+        if method == 'DELETE':
+            return requests.delete('http://{}:{}'.format(host, port) + url, json=data).json()
+        if method == 'PUT':
+            return requests.put('http://{}:{}'.format(host, port) + url, json=data).json()
+    except:
+        return {'success': False}
 
 
 def error(err=520, message='Что-то пошло не так :('):
-    return make_response(render('error.html', data={'message': message,
-                                                    'type': err}))
+    return render('error.html', data={'message': message, 'type': err})
 
 
 @app.errorhandler(401)
@@ -555,17 +563,22 @@ def server_error(err=None):
     return error(500, 'Ошибка сервера :(')
 
 
+@app.route('/')
+@app.route('/index')
+def index():
+    return redirect('/re_restore')
+
+
 if __name__ == '__main__':
     db.create_all()
 
+    api.add_resource(SignIn, '/sign-in')
+    api.add_resource(SignUp, '/sign-up')
+    api.add_resource(SignOut, '/sign-out')
 
     api.add_resource(UsersList, '/users')
     api.add_resource(User, '/users/<int:user_id>')
-    # api.add_resource(Index, '/', '/index')
     api.add_resource(LK, '/lk')
-    api.add_resource(SignUp, '/sign-up')
-    api.add_resource(SignIn, '/sign-in')
-    api.add_resource(SignOut, '/sign-out')
     api.add_resource(PublishNews, '/add-news')
 
     app.run(port=port, host=host)

@@ -40,35 +40,43 @@
                     <a class="nav-item nav-link" href="/sign-out">Выход</a>
                 {% else %}
                     <li class="nav-item dropdown">
-                        <a class="nav-link" href="#" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                        <a class="nav-link" href="#" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" id="sign-in-button">
                           Вход
                         </a>
-                        <form class="dropdown-menu p-4 dropdown-menu-right" style="width: 300px; margin-top: 10px;">
-                            <div class="form-group">
+                        <form method="post" class="dropdown-menu p-4 dropdown-menu-right" style="width: 300px; margin-top: 10px;">
+                            <div class="form-group" style="margin-bottom: 10px;">
                                 <label for="dropdownFormLogin">Логин</label>
-                                <input type="text" class="form-control" id="dropdownFormLogin">
+                                <input type="text" class="form-control" id="dropdownFormLogin" name="login" value="{{ data['last']['login'] }}">
                             </div>
 
-                            {% if data['errors']['login'] %}
-                                {{ data['errors']['login'] }}
+                            {% if data['errors']['authorization']['login'] %}
+                                <div style="font-size: 14px; color: orangered; margin-bottom: 5px;">
+                                    {{ data['errors']['authorization']['login'] }}
+                                </div>
                             {% endif %}
 
-                            <div class="form-group">
+                            <div class="form-group" style="margin-bottom: 10px;">
                                 <label for="dropdownFormPassword">Пароль</label>
-                                <input type="password" class="form-control" id="dropdownFormPassword">
+                                <input type="password" class="form-control" id="dropdownFormPassword" name="password" value="{{ data['last']['password'] }}">
                             </div>
 
-                            {% if data['errors']['password'] %}
-                                {{ data['errors']['password'] }}
+                            {% if data['errors']['authorization']['password'] %}
+                                <p style="font-size: 14px; color: orangered; margin-bottom: 5px;">
+                                    {{ data['errors']['authorization']['password'] }}
+                                </p>
+                            {% elif data['errors']['authorization']['other'] %}
+                                <p style="font-size: 14px; color: orangered;">
+                                    {{ data['errors']['authorization']['other'] }}
+                                </p>
                             {% endif %}
 
-                            <div class="form-check">
+                            <div class="form-check"  style="margin-bottom: 10px;">
                                 <input type="checkbox" class="form-check-input" id="dropdownCheck">
                                 <label class="form-check-label" for="dropdownCheck">
                                     Запомнить меня
                                 </label>
                             </div>
-                            <button type="submit" class="btn btn-info">Войти</button>
+                            <button type="submit" class="btn btn-info" name="sign-in">Войти</button>
                         </form>
                     </li>
                     <div class="nav-item nav-link">/</div>
@@ -77,6 +85,12 @@
             </div>
         </div>
     </nav>
+
+    {% if data['errors']['authorization']['any'] %}
+        <script>
+            $("#sign-in-button").click();
+        </script>
+    {% endif %}
 
     <div class="dropdown" style="margin-left: 15px; margin-top: 10px; position: absolute; z-index: 1;">
         <button class="btn btn-secondary dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
