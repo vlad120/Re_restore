@@ -32,16 +32,25 @@ DATA = {'menu_items': [{'name': 'tablets',
                                      'login': None,
                                      'other': None,
                                      'any': False}},
-        'last': {'login': '',
-                 'password:': '',
-                 'remember': True}
+        'last': {'authorization': {'login': '',
+                                   'password:': '',
+                                   'remember': True}}
         }
 
 
-def get_authorization(tmp_id=None, tmp_login=None, tmp_password=None):
-    return {'id': tmp_id if tmp_id else request.cookies.get('userID'),
-            'login': tmp_login if tmp_login else request.cookies.get('userLogin'),
-            'password': tmp_password if tmp_password else request.cookies.get('userPassword')}
+def get_authorization(tmp_id=None, tmp_login=None, tmp_password=None, img=False):
+    a = {'id': tmp_id if tmp_id else request.cookies.get('userID'),
+         'login': tmp_login if tmp_login else request.cookies.get('userLogin'),
+         'password': tmp_password if tmp_password else request.cookies.get('userPassword')}
+    if img and a['id']:
+        try:
+            a['image'] = UserModel.query.filter_by(id=a['id']).first().photo if a['id'] else None
+        except Exception as e:
+            print("Get authorization photo Error:\t", e)
+            sign_out()
+            for i in a:
+                a[i] = None
+    return a
 
 
 def verify_curr_admin():
@@ -69,7 +78,7 @@ def verify_authorization(admin=False):
 
 
 def render(template, a=None, **kwargs):
-    authorization = a if a else get_authorization()
+    authorization = a if a else get_authorization(img=True)
     if authorization:
         return render_template(template, authorization=authorization, **kwargs)
     else:
@@ -152,7 +161,7 @@ class Authorization(Resource):
 
             parser = reqparse.RequestParser()
             for arg in ('login', 'password'):
-                parser.add_argument(arg, required=True)
+                parser.add_argument(arg)
             args = parser.parse_args()
             login = args['login']
             password = args['password']
@@ -174,37 +183,47 @@ class Authorization(Resource):
             else:
                 errors['login'] = "Логин не найден в системе."
         except Exception as e:
-            print("Authorization Error:\t", e)
+            print("Authorization (API) Error:\t", e)
             errors['other'] = "Ошибка сервера."
         return make_success(False, errors=errors)
 
     # Регистрация
     def post(self):
-        errors = {'name': None,
-                  'surname': None,
-                  'email': None,
-                  'login': None,
-                  'password': None,
-                  'photo': None,
-                  'other': None}
+        all_fields = ['name', 'surname', 'email', 'login', 'password', 'photo']
+        errors = dict()
+        for field in all_fields + ['other']:
+            errors[field] = None
+
         try:
-            authorization = get_authorization()
-            if authorization['id']:
+            if get_authorization()['id']:
                 return make_success(False)
 
             parser = reqparse.RequestParser()
-            for arg in ('name', 'surname', 'email', 'login', 'password', 'photo'):
-                parser.add_argument(arg)
-            args = parser.parse_args()
+            for field in all_fields:
+                parser.add_argument(field)
+            args = dict(parser.parse_args())
 
+            # проверка на пустоту
+            err = False
+            for field in all_fields:
+                if not args[field] and field != 'photo':
+                    errors[field] = 'Поле должно быть заполнено.'
+                    err = True
+            if err:
+                return make_success(False, errors=errors)
+
+            # на занятый логин
             if (args['login'] == admin_login or
                     UserModel.query.filter_by(login=args['login']).first()):
                 errors['login'] = "Логин занят другим пользователем. Придумайте другой"
 
+            # на длину полей (для базы данных)
             if len(args['name']) > 80:
                 errors['name'] = "Слишком длинное имя (максимум 80 символов)"
             if len(args['surname']) > 80:
                 errors['surname'] = "Слишком длинная фамилия (максимум 80 символов)"
+            if len(args['email']) > 120:
+                errors['email'] = "Слишком длинный e-mail (максимум 120 символов)"
             if len(args['login']) > 80 and not errors['login']:
                 errors['login'] = "Слишком длинный логин (максимум 80 символа)"
             if len(args['password']) > 100:
@@ -215,24 +234,32 @@ class Authorization(Resource):
             if any(err for err in errors.values()):
                 return make_success(False, errors=errors)
 
+            photo_name = None
+            if args['photo']:
+                try:
+                    ext = request.files['file'].filename.split('.')[-1]
+                    if ext.lower() in ['png', 'jpg', 'jpeg']:
+                        photo_name = 'tmp.{}'.format(ext)
+                        args['photo'].save('static/profiles/' + photo_name)
+                except Exception as e:
+                    print("Save photo during registration Error:\t", e)
+                    if photo_name:
+                        remove(photo_name)
+                        photo_name = None
+
+            if not photo_name:
+                photo_name = "NoPhoto.jpg"
+            args['photo'] = photo_name
+
+            args['password'] = generate_password_hash(args['password'])
+
             new_user = UserModel(**args)
             db.session.add(new_user)
             db.session.commit()
 
-            if args['photo']:
-                photo_name = None
-                try:
-                    photo_name = '{}.{}'.format(str(new_user.id),
-                                                request.files['file'].filename.split('.')[-1])
-                    args['photo'].save('static/profiles/' + photo_name)
-                    new_user.photo = photo_name
-                except:
-                    if photo_name:
-                        remove(photo_name)
-                    new_user.photo = "NoPhoto.jpg"
             return make_success(new_user.id, errors=errors)
         except Exception as e:
-            print("Registration Error:\t", e)
+            print("Registration (API) Error:\t", e)
             errors['other'] = "Ошибка сервера."
             return make_success(False, errors=errors)
 
@@ -414,65 +441,6 @@ class PublishNews(Resource):
         return make_response(render("add-news.html", title="Add News", form=form, data={'errors': self.errors}))
 
 
-class SignUp(Resource):
-    errors = {'name': None,
-              'surname': None,
-              'email': None,
-              'login': None,
-              'password': None}
-
-    def get(self):
-        authorization = get_authorization()['id']
-        if not authorization:
-            form = SignUpForm()
-            return self.render(form)
-        return redirect('/lk')
-
-    def post(self):
-        authorization = get_authorization()['id']
-        if not authorization:
-            form = SignUpForm()
-            if form.validate_on_submit():
-                name = form.name.data
-                surname = form.surname.data
-                email = form.email.data
-                login = form.login.data
-                password = form.password.data
-
-                if (login == admin_login or
-                        UserModel.query.filter_by(login=login).first()):
-                    self.errors['login'] = "Логин занят другим пользователем. Придумайте другой"
-
-                if len(name) > 64:
-                    self.errors['name'] = "Слишком длинное имя (максимум 80 символов)"
-                if len(surname) > 64:
-                    self.errors['surname'] = "Слишком длинная фамилия (максимум 80 символов)"
-                if len(login) > 64 and not self.errors['login']:
-                    self.errors['login'] = "Слишком длинный логин (максимум 80 символа)"
-                if len(password) > 100:
-                    self.errors['password'] = "Слишком длинный пароль (максимум 100 символов)"
-                if len(password) < 3:
-                    self.errors['password'] = "Слишком простой пароль (не менее 3 символов)"
-
-                if any(err for err in self.errors.values()):
-                    return self.render(form)
-
-                new_user = UserModel(name=name,
-                                     surname=surname,
-                                     email=email,
-                                     login=login,
-                                     password=generate_password_hash(password))
-                db.session.add(new_user)
-                db.session.commit()
-                add_authorization(new_user.id)
-                return redirect('/lk')
-            return self.render(form)
-        return redirect('/lk')
-
-    def render(self, form):
-        return make_response(render("sign-up.html", title="Sign Up", form=form, data={'errors': self.errors}))
-
-
 def make_success(state=True, message='', **kwargs):
     data = {'success': state if state else False}
     if message:
@@ -519,30 +487,38 @@ def re_restore():
             return sign_in('index.html', t, data)
 
 
+@app.route('/re_restore/<string:category>')
+def category(category):
+    return render('/goods-category')
+
+
+@app.route('/re_restore/<string:category>/<int:goods_id>')
+def goods(category, goods_id):
+    return render('/goods')
+
+
 def sign_in(page, t, data, ready_data=None):
     if get_authorization()['id']:
         return redirect('/lk')
 
     try:
         response = get_self_response('/authorization', data=ready_data if ready_data else request.form, method='GET')
-        if not response['success']:
-            data['errors']['authorization'].update(response['errors'])
-            data['errors']['authorization']['any'] = True
-            data['last']['login'] = request.form['login']
-            data['last']['password'] = request.form['password']
-            data['last']['remember'] = True if 'remember_me' in request.form else False
-
         if response['success']:
-            a = get_authorization(response['success'], request.form['login'], request.form['password'])
+            a = get_authorization(response['success'], request.form['login'], request.form['password'], img=True)
             resp = make_response(render(page, a=a, title=t, data=data))
             resp.set_cookie('userID', str(a['id']))
             resp.set_cookie('userLogin', str(a['login']))
             resp.set_cookie('userPassword', str(a['password']))
-
-        resp = make_response(render(page, title=t, data=data))
+        else:
+            data['errors']['authorization'].update(response['errors'])
+            data['errors']['authorization']['any'] = True
+            data['last']['authorization']['login'] = request.form['login']
+            data['last']['authorization']['password'] = request.form['password']
+            data['last']['authorization']['remember'] = True if 'remember_me' in request.form else False
+            resp = make_response(render(page, title=t, data=data))
         return resp
     except Exception as e:
-        print("Sign In Error:\t", e)
+        print("Sign In (func) Error:\t", e)
         return server_error()
 
 
@@ -556,31 +532,42 @@ def sign_out():
 
 @app.route('/sign-up', methods=["GET", "POST"])
 def sign_up():
-    data = deepcopy(DATA)
-    data['errors']['registration'] = {'name': None,
-                                      'surname': None,
-                                      'email': None,
-                                      'login': None,
-                                      'password': None,
-                                      'photo': None,
-                                      'other': None}
     if get_authorization()['id']:
         return redirect('/lk')
+    t = 'Регистрация'
+    all_fields = ['name', 'surname', 'email', 'login', 'password', 'photo']
 
-    form = SignUpForm()
-    if form.validate_on_submit():
-        ready_data = {'name': form.name.data,
-                      'surname': form.surname.data,
-                      'email': form.email.data,
-                      'login': form.login.data,
-                      'password': form.password.data}
+    try:
+        data = deepcopy(DATA)
+        data['last']['registration'] = dict()
+        data['errors']['registration'] = dict()
+        for field in all_fields:
+            data['last']['registration'][field] = ''
+            data['errors']['registration'][field] = None
+        data['errors']['registration']['other'] = None
 
-        response = get_self_response('/authorization', data=ready_data, method='POST')
-        if response['success']:
-            return sign_in('/lk', 'Успешно', data, ready_data)
-        else:
-            data['errors']['registration'].update(response['errors'])
-    return render('sign-up.html', t='Регистрация', form=form, data=data)
+        if request.method == "GET":
+            return render('sign-up.html', t=t, data=data)
+
+        elif request.method == "POST":
+            form = dict(request.form)
+            for i in form:
+                if type(form[i]) is list:
+                    form[i] = form[i][-1]
+            if 'sign-in' in form:
+                return sign_in('sign-up.html', t, data)
+
+            response = get_self_response('/authorization', data=form, method='POST')
+            if response['success']:
+                return sign_in('lk.html', t='Успешно', data=data, ready_data={'login': form['login'],
+                                                                          'password': form['password']})
+            else:
+                data['errors']['registration'].update(response['errors'])
+                data['last']['registration'].update(form)
+        return render('sign-up.html', t=t, data=data)
+    except Exception as e:
+        print("Sign Up (func) Error:\t", e)
+        return server_error()
 
 
 @app.route('/lk', methods=["GET", "POST"])
