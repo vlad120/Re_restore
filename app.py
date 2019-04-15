@@ -2,10 +2,7 @@ from flask import Flask, render_template, redirect, request, make_response, json
 from flask_restful import reqparse, Api, Resource
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import check_password_hash, generate_password_hash
-from forms import SignUpForm, AddNewsForm
-from datetime import date
 import requests
-from copy import deepcopy
 from os import remove
 
 host = '127.0.0.1'
@@ -22,20 +19,22 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///all_data.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-news_sorting = 'DATE'
+HOME = '/re_restore'
 
-DATA = {'menu_items': [{'name': 'tablets',
-                        'link': '#'},
-                       {'name': 'Смартфоны',
-                        'link': '#'}],
-        'errors': {'authorization': {'password': None,
-                                     'login': None,
-                                     'other': None,
-                                     'any': False}},
-        'last': {'authorization': {'login': '',
-                                   'password:': '',
-                                   'remember': True}}
-        }
+
+def create_data():
+    return {'menu_items': [{'name': 'tablets',
+                            'link': '#'},
+                           {'name': 'Смартфоны',
+                            'link': '#'}],
+            'errors': {'authorization': {'password': None,
+                                         'login': None,
+                                         'other': None,
+                                         'any': False}},
+            'last': {'authorization': {'password': '',
+                                       'login': '',
+                                       'remember': True}}
+            }
 
 
 def get_authorization(tmp_id=None, tmp_login=None, tmp_password=None, img=False):
@@ -44,7 +43,7 @@ def get_authorization(tmp_id=None, tmp_login=None, tmp_password=None, img=False)
          'password': tmp_password if tmp_password else request.cookies.get('userPassword')}
     if img and a['id']:
         try:
-            a['image'] = UserModel.query.filter_by(id=a['id']).first().photo if a['id'] else None
+            a.update(UserModel.query.filter_by(id=a['id']).first().to_dict(photo_req=True))
         except Exception as e:
             print("Get authorization photo Error:\t", e)
             sign_out()
@@ -79,10 +78,10 @@ def verify_authorization(admin=False):
 
 def render(template, a=None, **kwargs):
     authorization = a if a else get_authorization(img=True)
-    if authorization:
-        return render_template(template, authorization=authorization, **kwargs)
-    else:
-        return render_template(template, **kwargs)
+    if (not a) and (not verify_authorization(admin=True)):
+        sign_out()
+        return render_template(template, authorization=get_authorization(), **kwargs)
+    return render_template(template, authorization=authorization, **kwargs)
 
 
 class GoodsModel(db.Model):
@@ -124,13 +123,17 @@ class UserModel(db.Model):
     email = db.Column(db.String(120), nullable=False)
     login = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(200), nullable=False)
-    photo = db.Column(db.String(100), nullable=False, default="NoPhoto.jpg")
+    subscription = db.Column(db.SMALLINT, default=1)
+    photo = db.Column(db.String(100), default="NoPhoto.jpg")
 
     def __repr__(self):
         return '<User {} {} {} {}>'.format(self.id, self.login, self.name, self.surname)
 
     def to_dict(self, id_req=True, name_req=False, surname_req=False,
-                email_req=False, login_req=True, photo_req=False):
+                email_req=False, login_req=False, photo_req=False,
+                subscr_req=False, all_req=False):
+        if all_req:
+            id_req, name_req, surname_req, email_req, login_req, photo_req, subscr_req = tuple(True for i in range(7))
         d = dict()
         if id_req:
             d['id'] = self.id
@@ -142,8 +145,10 @@ class UserModel(db.Model):
             d['email'] = self.email
         if login_req:
             d['login'] = self.login
+        if subscr_req:
+            d['subscription'] = self.subscription
         if photo_req:
-            d['photo'] = self.photo
+            d['photo'] = 'static/profiles/' + self.photo
         return d
 
 
@@ -189,7 +194,7 @@ class Authorization(Resource):
 
     # Регистрация
     def post(self):
-        all_fields = ['name', 'surname', 'email', 'login', 'password', 'photo']
+        all_fields = ['name', 'surname', 'email', 'login', 'password']
         errors = dict()
         for field in all_fields + ['other']:
             errors[field] = None
@@ -199,59 +204,43 @@ class Authorization(Resource):
                 return make_success(False)
 
             parser = reqparse.RequestParser()
-            for field in all_fields:
+            for field in all_fields + ['subscription']:
                 parser.add_argument(field)
             args = dict(parser.parse_args())
 
             # проверка на пустоту
-            err = False
             for field in all_fields:
-                if not args[field] and field != 'photo':
+                if not args[field]:
                     errors[field] = 'Поле должно быть заполнено.'
-                    err = True
-            if err:
+                else:
+                    args[field] = args[field].strip()
+            if any(val for val in errors.values()):
                 return make_success(False, errors=errors)
 
             # на занятый логин
             if (args['login'] == admin_login or
                     UserModel.query.filter_by(login=args['login']).first()):
-                errors['login'] = "Логин занят другим пользователем. Придумайте другой"
+                errors['login'] = "Логин занят другим пользователем. Придумайте другой."
 
             # на длину полей (для базы данных)
             if len(args['name']) > 80:
-                errors['name'] = "Слишком длинное имя (максимум 80 символов)"
+                errors['name'] = "Слишком длинное имя (максимум 80 символов)."
             if len(args['surname']) > 80:
-                errors['surname'] = "Слишком длинная фамилия (максимум 80 символов)"
+                errors['surname'] = "Слишком длинная фамилия (максимум 80 символов)."
             if len(args['email']) > 120:
-                errors['email'] = "Слишком длинный e-mail (максимум 120 символов)"
+                errors['email'] = "Слишком длинный e-mail (максимум 120 символов)."
             if len(args['login']) > 80 and not errors['login']:
-                errors['login'] = "Слишком длинный логин (максимум 80 символа)"
+                errors['login'] = "Слишком длинный логин (максимум 80 символа)."
             if len(args['password']) > 100:
-                errors['password'] = "Слишком длинный пароль (максимум 100 символов)"
+                errors['password'] = "Слишком длинный пароль (максимум 100 символов)."
             if len(args['password']) < 3:
-                errors['password'] = "Слишком простой пароль (не менее 3 символов)"
+                errors['password'] = "Слишком простой пароль (не менее 3 символов)."
 
             if any(err for err in errors.values()):
                 return make_success(False, errors=errors)
 
-            photo_name = None
-            if args['photo']:
-                try:
-                    ext = request.files['file'].filename.split('.')[-1]
-                    if ext.lower() in ['png', 'jpg', 'jpeg']:
-                        photo_name = 'tmp.{}'.format(ext)
-                        args['photo'].save('static/profiles/' + photo_name)
-                except Exception as e:
-                    print("Save photo during registration Error:\t", e)
-                    if photo_name:
-                        remove(photo_name)
-                        photo_name = None
-
-            if not photo_name:
-                photo_name = "NoPhoto.jpg"
-            args['photo'] = photo_name
-
             args['password'] = generate_password_hash(args['password'])
+            args['subscription'] = 1 if args['subscription'] else 0
 
             new_user = UserModel(**args)
             db.session.add(new_user)
@@ -264,181 +253,98 @@ class Authorization(Resource):
             return make_success(False, errors=errors)
 
 
-class News(Resource):
-    def get(self, news_id):
-        news_id = int(news_id)
-        exist = news_exist(news_id)
-        if not exist[0]:
-            return exist[1]
-        news = NewsModel.query.filter_by(id=news_id).first().to_dict(content_req=True,
-                                                                     author_id_req=True)
-        return make_response(render('full-news.html', title=news['title'], data={'news': news}))
-
-    def delete(self, news_id):
-        news_id = int(news_id)
-        exist = news_exist(news_id)
-        if not exist[0]:
-            return exist[1]
-        try:
-            news = NewsModel.query.filter_by(id=news_id).first()
-            db.session.delete(news)
-            db.session.commit()
-            return {'success': 'OK'}
-        except:
-            return {'success': 'FAIL'}
-
-
-class NewsList(Resource):
-    def get(self):
-        s = "id" if news_sorting == "DATE" else "title"
-        news = [i.to_dict(short_content_req=True) for i in NewsModel.query.order_by(s).all()]
-        data = {'news': news if news_sorting == "ABC" else list(reversed(news)),
-                'news_sorting': news_sorting}
-        return make_response(render('news.html', title="News", data=data))
-
-    def post(self):
-        # изменение сортировки новостей на главной странице
-        if 'sorting' in request.form:
-            return self.put()
-        # или добавление новых новостей
-        try:
-            parser = reqparse.RequestParser()
-            parser.add_argument('title', required=True)
-            parser.add_argument('content', required=True)
-            parser.add_argument('author_id', required=True, type=int)
-            args = parser.parse_args()
-            news = NewsModel(title=args['title'], content=args['content'],
-                             author_id=args['author_id'], date=date.today())
-            db.session.add(news)
-            db.session.commit()
-            return success()
-        except:
-            return success(False)
-
-    def put(self):
-        global news_sorting
-        args = request.form
-        news_sorting = args['sorting']
-        return self.get()
-
-
 class User(Resource):
     def get(self, user_id):
         user_id = int(user_id)
-        exist = user_exist(user_id)
-        if not exist[0]:
-            return success(False)
-        user = UserModel.query.filter_by(id=user_id).first().to_dict(name_req=True,
-                                                                     surname_req=True,
-                                                                     email_req=True)
-        return success(user=user)
+        user = UserModel.query.filter_by(id=user_id).first()
+        if not user:
+            return make_success(False)
+        return make_success(user=user.to_dict(all_req=True))
 
     def put(self, user_id):
+        errors = {'name': None,
+                  'surname': None,
+                  'email': None,
+                  'check_password': None,
+                  'new_password': None,
+                  'photo': None}
         try:
             user_id = int(user_id)
             parser = reqparse.RequestParser()
-            for arg in ('name', 'surname', 'email', 'login', 'password'):
+            for arg in ('name', 'surname', 'email', 'check_password', 'new_password', 'subscription', 'photo'):
                 parser.add_argument(arg)
             args = parser.parse_args()
-            if not any(val for val in args.values()):
-                return success(False, 'Bad request')
+
+            if not args['check_password']:
+                errors['check_password'] = "Введите старый пароль для подтверждения."
+                return make_success(False, errors=errors)
+
             user = UserModel.query.filter_by(id=user_id).first()
-            if args['name']:
-                user.name = args['name']
-            if args['surname']:
-                user.surname = args['surname']
-            if args['email']:
-                user.email = args['email']
-            if args['login']:
-                user.login = args['login']
-            if args['password']:
-                user.password = generate_password_hash(args['password'])
+
+            if not check_password_hash(user.password, args['check_password']):
+                errors['check_password'] = "Старый пароль введен неверно."
+                return make_success(False, errors=errors)
+
+            if args['name'] and args['name'] != user.name:
+                if len(args['name']) > 80:
+                    errors['name'] = "Слишком длинное имя (> 80 символов)."
+                else:
+                    user.name = args['name'].strip()
+            if args['surname'] and args['surname'] != user.surname:
+                if len(args['surname']) > 80:
+                    errors['surname'] = "Слишком длинная фамилия (> 80 символов)."
+                else:
+                    user.surname = args['surname'].strip()
+            if args['email'] and args['email'] != user.email:
+                if len(args['email']) > 120:
+                    errors['email'] = "Слишком длинный e-mail (> 120 символов)."
+                else:
+                    user.email = args['email'].strip()
+            if args['new_password']:
+                if len(args['new_password']) > 100:
+                    errors['new_password'] = "Слишком длинный пароль (> 100 символов)."
+                elif len(args['new_password']) < 3:
+                    errors['new_password'] = "Слишком простой пароль (< 3 символов)."
+                else:
+                    user.password = generate_password_hash(args['new_password'].strip())
+
+            user.subscription = 1 if args['subscription'] else 0
+
+            if args['photo']:
+                photo_name = None
+                try:
+                    ext = request.files['file'].filename.split('.')[-1]
+                    if ext.lower() in ['png', 'jpg', 'jpeg']:
+                        photo_name = '{}.{}'.format(user.id, ext)
+                        args['photo'].save('static/profiles/' + photo_name)
+                    else:
+                        errors['photo'] = "Ошибка при загрузке фото."
+                except Exception as e:
+                    print("Save photo during changing user info Error:\t", e)
+                    if photo_name:
+                        remove(photo_name)
+                        errors['photo'] = True
+
             db.session.commit()
-            return success()
-        except:
-            return success(False, 'Server error')
+            return make_success(errors=errors)
+        except Exception as e:
+            print("Change user info Error:\t", e)
+            return make_success(False, 'Server error')
 
-    def delete(self, user_id):
-        user_id = int(user_id)
-        if get_authorization()['id'] == admin_id:
-            exist = user_exist(user_id)
-            if not exist[0]:
-                return success(False, 'User not found')
-            try:
-                user = UserModel.query.filter_by(id=user_id).first()
-                db.session.delete(user)
-                db.session.commit()
-                return success()
-            except:
-                return success(False, 'Server error')
-        return success(False, 'Access error')
-
-
-class UsersList(Resource):
-    def get(self):
-        try:
-            users = [i.to_dict(name_req=True,
-                               surname_req=True,
-                               login_req=True) for i in UserModel.query.all()]
-            return success(users=users)
-        except:
-            return success(False, 'Server error')
-
-    def post(self):
-        try:
-            parser = reqparse.RequestParser()
-            for arg in ('name', 'surname', 'email', 'login', 'password'):
-                parser.add_argument(arg, required=True)
-            args = self.parser.parse_args()
-            user = NewsModel(name=args['name'], surname=args['surname'],
-                             email=args['email'], login=args['login'],
-                             password=generate_password_hash(args['password']))
-            db.session.add(user)
-            db.session.commit()
-            return make_success()
-        except:
-            return make_success(False)
-
-
-class PublishNews(Resource):
-    errors = {'title': None,
-              'content': None}
-
-    def get(self):
-        authorization = get_authorization()['id']
-        if authorization and authorization != admin_id:
-            form = AddNewsForm()
-            return self.render(form)
-
-    def post(self):
-        authorization = get_authorization()['id']
-        if authorization and authorization != admin_id:
-            form = AddNewsForm()
-            if form.validate_on_submit():
-                title = form.title.data
-                content = form.content.data
-
-                if len(title) > 70:
-                    self.errors['title'] = "Слишком длинное название (должно быть не более 70 символов)"
-                if len(content) > 4000:
-                    self.errors['content'] = "Слишком много контента (должно быть не более 4000 символов)"
-
-                if any(err for err in self.errors.values()):
-                    return self.render(form)
-
-                r = 'http://{}:{}/{}'.format(host, port, "news")
-                data = {'title': title,
-                        'content': content,
-                        'author_id': authorization,
-                        'date': str(date.today())}
-
-                if requests.post(r, json=data).json()['success'] == "OK":
-                    return redirect('/lk')
-                return make_response(server_error)
-            return self.render(form)
-
-    def render(self, form):
-        return make_response(render("add-news.html", title="Add News", form=form, data={'errors': self.errors}))
+    # def delete(self, user_id):
+    #     user_id = int(user_id)
+    #     if get_authorization()['id'] == admin_id:
+    #         exist = user_exist(user_id)
+    #         if not exist[0]:
+    #             return success(False, 'User not found')
+    #         try:
+    #             user = UserModel.query.filter_by(id=user_id).first()
+    #             db.session.delete(user)
+    #             db.session.commit()
+    #             return success()
+    #         except:
+    #             return success(False, 'Server error')
+    #     return success(False, 'Access error')
 
 
 def make_success(state=True, message='', **kwargs):
@@ -452,7 +358,7 @@ def make_success(state=True, message='', **kwargs):
 @app.route('/re_restore', methods=["GET", "POST"])
 def re_restore():
     t = 'Добро пожаловать в Re_restore!'
-    data = deepcopy(DATA)
+    data = create_data()
 
     data.update(
         {'slides': [url_for('static', filename='main_banners/{}.png'.format(i + 1)) for i in range(4)],
@@ -505,7 +411,15 @@ def sign_in(page, t, data, ready_data=None):
         response = get_self_response('/authorization', data=ready_data if ready_data else request.form, method='GET')
         if response['success']:
             a = get_authorization(response['success'], request.form['login'], request.form['password'], img=True)
-            resp = make_response(render(page, a=a, title=t, data=data))
+            if page == 'sign-up.html':
+                response = dict(get_self_response('/users/{}'.format(a['id']), method='GET'))
+                if response['success']:
+                    data['user'] = response['user']
+                    resp = make_response(render("lk.html", a=a, title=t, data=data))
+                else:
+                    return server_error()
+            else:
+                resp = make_response(render(page, a=a, title=t, data=data))
             resp.set_cookie('userID', str(a['id']))
             resp.set_cookie('userLogin', str(a['login']))
             resp.set_cookie('userPassword', str(a['password']))
@@ -524,7 +438,7 @@ def sign_in(page, t, data, ready_data=None):
 
 @app.route('/sign-out')
 def sign_out():
-    resp = make_response(redirect('/re_restore'))
+    resp = make_response(redirect(HOME))
     for cookie in ('userID', 'userLogin', 'userPassword'):
         resp.set_cookie(cookie, '', expires=0)
     return resp
@@ -535,16 +449,16 @@ def sign_up():
     if get_authorization()['id']:
         return redirect('/lk')
     t = 'Регистрация'
-    all_fields = ['name', 'surname', 'email', 'login', 'password', 'photo']
+    all_fields = ['name', 'surname', 'email', 'login', 'password']
 
     try:
-        data = deepcopy(DATA)
-        data['last']['registration'] = dict()
+        data = create_data()
         data['errors']['registration'] = dict()
+        data['last']['registration'] = dict()
+        for field in all_fields + ['other']:
+            data['errors']['registration'][field] = None
         for field in all_fields:
             data['last']['registration'][field] = ''
-            data['errors']['registration'][field] = None
-        data['errors']['registration']['other'] = None
 
         if request.method == "GET":
             return render('sign-up.html', t=t, data=data)
@@ -560,7 +474,7 @@ def sign_up():
             response = get_self_response('/authorization', data=form, method='POST')
             if response['success']:
                 return sign_in('lk.html', t='Успешно', data=data, ready_data={'login': form['login'],
-                                                                          'password': form['password']})
+                                                                              'password': form['password']})
             else:
                 data['errors']['registration'].update(response['errors'])
                 data['last']['registration'].update(form)
@@ -572,14 +486,53 @@ def sign_up():
 
 @app.route('/lk', methods=["GET", "POST"])
 def lk():
+    def get():
+        response = dict(get_self_response('/users/{}'.format(authorization['id']), method='GET'))
+        if response['success']:
+            data['user'] = response['user']
+            return render("lk.html", title=t, data=data)
+        return server_error()
+
     t = "Личный кабинет"
-    verify_authorization()
-    authorization = get_authorization()
-    if authorization['id'] == admin_id:
-        return render('lk_admin.html', title=t, data=DATA)
-    elif authorization:
-        return render("lk.html", title=t, data=DATA)
-    return redirect('/re_restore')
+    if verify_curr_admin():
+        return redirect('/lk-admin')
+    elif verify_authorization():
+        authorization = get_authorization()
+        data = create_data()
+        data['errors']['change_profile_info'] = {'name': None,
+                                                 'surname': None,
+                                                 'email': None,
+                                                 'check_password': None,
+                                                 'new_password': None,
+                                                 'photo': None}
+        if request.method == 'GET':
+            return get()
+
+        elif request.method == 'POST':
+            if 'changeUserInfoBtn' in request.form:
+                response = dict(get_self_response('/users/{}'.format(authorization['id']),
+                                                  data=request.form, method='PUT'))
+                data['errors']['change_profile_info'].update(response['errors'])
+                return get()
+            return server_error()
+    return redirect(HOME)
+
+
+@app.route('/lk-admin', methods=["GET", "POST"])
+def lk_admin_general():
+    t = "Личный кабинет (ADMIN)"
+    if verify_curr_admin():
+        data = create_data()
+
+        return render('lk-admin.html', title=t, data=data)
+    elif verify_authorization():
+        return redirect('/lk')
+    return redirect(HOME)
+
+
+@app.route('/lk-admin/<string:section>', methods=["GET", "POST"])
+def lk_admin_section(section):
+    pass
 
 
 def get_self_response(url, data={}, method='GET'):
@@ -597,7 +550,7 @@ def get_self_response(url, data={}, method='GET'):
 
 
 def error(err=520, message='Что-то пошло не так :('):
-    data = deepcopy(DATA)
+    data = create_data()
     data.update({'message': message, 'type': err})
     return render('error.html', data=data)
 
@@ -620,25 +573,13 @@ def server_error(err=None):
 @app.route('/')
 @app.route('/index')
 def index():
-    return redirect('/re_restore')
+    return redirect(HOME)
 
 
 if __name__ == '__main__':
     db.create_all()
 
-    # new_user = UserModel(name='dfs',
-    #                      surname='erdfscsa',
-    #                      email='resdaafghrgfds',
-    #                      login='vlad',
-    #                      password=generate_password_hash('qwerty'),
-    #                      photo='NoPhoto.jpg')
-    # db.session.add(new_user)
-    # db.session.commit()
-
     api.add_resource(Authorization, '/authorization')
-
-    api.add_resource(UsersList, '/users')
     api.add_resource(User, '/users/<int:user_id>')
-    api.add_resource(PublishNews, '/add-news')
 
     app.run(port=port, host=host)

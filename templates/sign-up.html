@@ -13,7 +13,7 @@
         .form-fields {
             width: 300px;
         }
-        .error {
+        .registration-error {
             margin-left: 70px;
             font-size: 14px;
             color: orangered;
@@ -28,7 +28,7 @@
     <br>
     <br>
     <h2 class="content base-title"><b>Регистрация</b></h2>
-    <form method="post" novalidate>
+    <form method="post">
         <p class="content">
             <div class="input-group mb-3 content form-fields">
                 <div class="input-group-prepend">
@@ -37,7 +37,7 @@
                 <input type="text" class="form-control" name="name" placeholder="Имя" value="{{ data['last']['registration']['name'] }}">
             </div>
             {% if data['errors']['registration']['name'] %}
-                <p class="error">{{ data['errors']['registration']['name'] }}</p>
+                <p class="registration-error">{{ data['errors']['registration']['name'] }}</p>
             {% endif %}
         </p>
         <p class="content">
@@ -48,7 +48,7 @@
                 <input type="text" class="form-control" name="surname" placeholder="Фамилия" value="{{ data['last']['registration']['surname'] }}">
             </div>
             {% if data['errors']['registration']['surname'] %}
-                <p class="error">{{ data['errors']['registration']['surname'] }}</p>
+                <p class="registration-error">{{ data['errors']['registration']['surname'] }}</p>
             {% endif %}
         </p>
         <p class="content">
@@ -59,7 +59,7 @@
                 <input type="email" class="form-control" name="email" placeholder="E-Mail" value="{{ data['last']['registration']['email'] }}">
             </div>
             {% if data['errors']['registration']['email'] %}
-                <p class="error">{{ data['errors']['registration']['email'] }}</p>
+                <p class="registration-error">{{ data['errors']['registration']['email'] }}</p>
             {% endif %}
         </p>
         <p class="content">
@@ -70,7 +70,7 @@
                 <input type="text" class="form-control" name="login" placeholder="Логин" value="{{ data['last']['registration']['login'] }}">
             </div>
             {% if data['errors']['registration']['login'] %}
-                <p class="error">{{ data['errors']['registration']['login'] }}</p>
+                <p class="registration-error">{{ data['errors']['registration']['login'] }}</p>
             {% endif %}
         </p>
         <p class="content">
@@ -81,8 +81,12 @@
                 <input type="password" class="form-control" name="password" placeholder="Пароль" value="{{ data['last']['registration']['password'] }}">
             </div>
             {% if data['errors']['registration']['password'] %}
-                <p class="error">{{ data['errors']['registration']['password'] }}</p>
+                <p class="registration-error">{{ data['errors']['registration']['password'] }}</p>
             {% endif %}
+        </p>
+        <p class="content">
+            <input type="checkbox" id="subscriptionCheck" name="subscription" checked>
+            <label class="form-check-label" for="subscriptionCheck">Подписка на новости по e-mail</label>
         </p>
         <p class="content">
             <button type="submit" class="btn btn-info" name="sign-up">Зарегистрироваться</button>

@@ -3,22 +3,47 @@
 {% block style %}
     <style type="text/css">
         .content { margin-left: 50px; }
+        .profile-photo {
+            width: 260px;
+            max-height: 260px;
+            height: auto;
+            border-radius: 5px;
+        }
+        .photo-place {
+            width: 260px;
+            height: 260px;
+            margin-left: 16px;
+        }
         .base-title {
             margin-top: 40px;
             color: orange;
         }
         .info {
+            float: right;
             padding-top: 15px;
             font-size: 20px;
             text-align: left;
-            width: 300px;
+            width: 450px;
             background-color: yellowgreen;
+            border-bottom-right-radius: 0;
+            border-top-right-radius: 0;
         }
-        .date {
-            height: 38px;
-            padding-top: 8px;
-            background-color: teal;
-            color: white;
+        .one-line { display: inline-block; }
+        .form-control-sm {
+            height: 25px;
+            width: 240px;
+            margin-left: 20px;
+        }
+        .delete-profile-btn {
+            margin-bottom: 5px;
+            float: right;
+            margin-right: 16px;
+        }
+        .change-info-error {
+            font-size: 10px;
+            color: orangered;
+            margin-bottom: 5px;
+            margin-left: 22px;
         }
         .card {
             width: 700px;
@@ -30,7 +55,76 @@
 
 
 {% block content %}
-    <br>
-    <br>
-    <h1>Ok</h1>
+    <br><br><br>
+    <div class="photo-place one-line">
+        <p style="text-align: center"><img src="{{ data['user']['photo'] }}", alt="Упс...", class="profile-photo"></p>
+    </div>
+
+    <div class="badge badge-primary text-wrap one-line info">
+        <form method="post">
+            <table>
+                <tr>
+                    <td>Имя:</td>
+                    <td>
+                        <input class="form-control form-control-sm one-line" type="text" value="{{ data['user']['name'] }}" name="name">
+                        {% if data['errors']['change_profile_info']['name'] %}
+                            <p class="change-info-error">{{ data['errors']['change_profile_info']['name'] }}</p>
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr>
+                    <td>Фамилия:</td>
+                    <td>
+                        <input class="form-control form-control-sm one-line" type="text" value="{{ data['user']['surname'] }}" name="surname">
+                        {% if data['errors']['change_profile_info']['surname'] %}
+                            <p class="change-info-error">{{ data['errors']['change_profile_info']['surname'] }}</p>
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr>
+                    <td>E-mail:</td>
+                    <td>
+                        <input class="form-control form-control-sm one-line" type="email" value="{{ data['user']['email'] }}" name="email">
+                        {% if data['errors']['change_profile_info']['email'] %}
+                            <p class="change-info-error">{{ data['errors']['change_profile_info']['email'] }}</p>
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr>
+                    <td>Логин:</td>
+                    <td><input class="form-control form-control-sm one-line"
+                               style="color: black; background-color: white;" type="text" value="{{ data['user']['login'] }}" disabled></td>
+                </tr>
+                <tr>
+                    <td>ID:</td>
+                    <td><input class="form-control form-control-sm one-line"
+                               style="color: black; background-color: white;" type="text" value="{{ data['user']['id'] }}" disabled></td>
+                </tr>
+                <tr>
+                    <td>Новый пароль:</td>
+                    <td>
+                        <input class="form-control form-control-sm one-line" type="password" name="new_password">
+                        {% if data['errors']['change_profile_info']['new_password'] %}
+                            <p class="change-info-error">{{ data['errors']['change_profile_info']['new_password'] }}</p>
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr>
+                    <td>Старый пароль:</td>
+                    <td>
+                        <input class="form-control form-control-sm one-line" type="password" name="check_password">
+                        {% if data['errors']['change_profile_info']['check_password'] %}
+                            <p class="change-info-error">{{ data['errors']['change_profile_info']['check_password'] }}</p>
+                        {% endif %}
+                    </td>
+                </tr>
+            </table>
+            <p>
+                <input type="checkbox" id="subscriptionCheck" name="subscription" {% if data['user']['subscription'] %}checked{% endif %}>
+                <label for="subscriptionCheck" style="margin-top: 20px;">Подписка на e-mail рассылку</label>
+            </p>
+            <button type="submit" class="btn btn-info one-line" style="margin-bottom: 5px;" name="changeUserInfoBtn">Сохранить</button>
+        </form>
+        <a href="/delete-profile/{{ authorization['id'] }}" class="btn btn-secondary delete-profile-btn one-line" name="deleteUser">Удалить профиль</a>
+    </div>
 {% endblock %}

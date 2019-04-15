@@ -23,6 +23,20 @@
 
     {% block style %}{% endblock %}
 
+    <style>
+        .profile-mini-photo {
+            height: 50px;
+            width: auto;
+            max-width: 150px;
+            border-radius: 100%;
+        }
+        .sign-in-error {
+            font-size: 14px;
+            color: orangered;
+            margin-bottom: 5px;
+        }
+    </style>
+
     <title>{{title}}</title>
 </head>
 <body>
@@ -35,24 +49,24 @@
         <div class="collapse navbar-collapse flex-row-reverse" id="navbarNavAltMarkup1">
             <div class="navbar-nav">
                 {% if authorization['id'] %}
-                    <img src="{% if authorization['image'] %}authorization['image']{% else %}static/profiles/NoPhoto.jpg{% endif %}",
-                         alt="Упс..." style="width: 50px; border: 25px;" class="nav-item nav-link" href="/lk">
-                    <a class="nav-item nav-link" href="/lk">{{ authorization['login'] }}</a>
-                    <div class="nav-item nav-link">/</div>
-                    <a class="nav-item nav-link" href="/sign-out">Выход</a>
+                    <a href="/lk"><img src="{% if authorization['image'] %}{{ authorization['image'] }}{% else %}static/profiles/NoPhoto.jpg{% endif %}",
+                                       alt="Упс..." class="nav-item nav-link profile-mini-photo"></a>
+                    <a class="nav-item nav-link" style="margin-top: 5px;" href="/lk">{{ authorization['login'] }}</a>
+                    <div class="nav-item nav-link" style="margin-top: 5px;">/</div>
+                    <a class="nav-item nav-link" href="/sign-out" style="margin-right: 20px; margin-top: 5px;">Выход</a>
                 {% else %}
                     <li class="nav-item dropdown">
                         <a class="nav-link" href="#" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" id="sign-in-button">
                           Вход
                         </a>
                         <form method="post" class="dropdown-menu p-4 dropdown-menu-right" style="width: 300px; margin-top: 10px;">
-                            <div class="form-group" style="margin-bottom: 10px;">
+                            <div class="form-group" style="margin-bottom: 5px;">
                                 <label for="dropdownFormLogin">Логин</label>
                                 <input type="text" class="form-control" id="dropdownFormLogin" name="login" value="{{ data['last']['authorization']['login'] }}">
                             </div>
 
                             {% if data['errors']['authorization']['login'] %}
-                                <div style="font-size: 14px; color: orangered; margin-bottom: 5px;">
+                                <div class="sign-in-error">
                                     {{ data['errors']['authorization']['login'] }}
                                 </div>
                             {% endif %}
@@ -63,18 +77,18 @@
                             </div>
 
                             {% if data['errors']['authorization']['password'] %}
-                                <p style="font-size: 14px; color: orangered; margin-bottom: 5px;">
+                                <p class="sign-in-error">
                                     {{ data['errors']['authorization']['password'] }}
                                 </p>
                             {% elif data['errors']['authorization']['other'] %}
-                                <p style="font-size: 14px; color: orangered;">
+                                <p class="sign-in-error">
                                     {{ data['errors']['authorization']['other'] }}
                                 </p>
                             {% endif %}
 
                             <div class="form-check"  style="margin-bottom: 10px;">
-                                <input type="checkbox" class="form-check-input" id="dropdownCheck" name="remember_me" {% if data['last']['authorization']['remember'] %}checked{% endif %}>
-                                <label class="form-check-label" for="dropdownCheck">
+                                <input type="checkbox" class="form-check-input" id="rememberCheck" name="remember_me" {% if data['last']['authorization']['remember'] %}checked{% endif %}>
+                                <label class="form-check-label" for="rememberCheck">
                                     Запомнить меня
                                 </label>
                             </div>
