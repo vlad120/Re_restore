@@ -5,6 +5,61 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import requests
 from os import remove
 
+
+class DataTemplate:
+    def get_data(self, tmp_a=False, base_req=False, lk_req=False, reg_req=False):
+        data = dict()
+        if base_req:
+            data.update(self.get_base_data())
+        if lk_req:
+            t = self.get_lk_data(tmp_a)
+            data['user'] = t['user']
+            data['errors'].update(t['errors'])
+        if reg_req:
+            t = self.get_registration_data()
+            data['last'].update(t['last'])
+            data['errors'].update(t['errors'])
+        return data
+
+    def get_base_data(self):
+        return {'menu_items': [{'name': 'tablets',
+                                'link': '#'},
+                               {'name': 'Смартфоны',
+                                'link': '#'}],
+                'errors': {'authorization': {'password': None,
+                                             'login': None,
+                                             'other': None,
+                                             'any': False}},
+                'last': {'authorization': {'password': '',
+                                           'login': ''}}
+                }
+
+    def get_lk_data(self, tmp_a=False):
+        response = dict(get_self_response('/users/{}'.format((tmp_a if tmp_a else get_authorization())['id']),
+                                          method='GET'))
+        if response['success']:
+            return {'user': response['user'],
+                    'errors': {'change_profile_info': {'name': None,
+                                                       'surname': None,
+                                                       'email': None,
+                                                       'check_password': None,
+                                                       'new_password': None,
+                                                       'photo': None}},
+                    }
+
+    def get_sign_in_data(self):
+        pass
+
+    def get_registration_data(self):
+        data = {'errors': {'registration': {}},
+                'last': {'registration': {}}
+                }
+        for i in ['name', 'surname', 'email', 'login', 'password']:
+            data['errors']['registration'][i] = None
+            data['last']['registration'][i] = ''
+        return data
+
+
 host = '127.0.0.1'
 port = 8080
 
@@ -21,20 +76,7 @@ db = SQLAlchemy(app)
 
 HOME = '/re_restore'
 
-
-def create_data():
-    return {'menu_items': [{'name': 'tablets',
-                            'link': '#'},
-                           {'name': 'Смартфоны',
-                            'link': '#'}],
-            'errors': {'authorization': {'password': None,
-                                         'login': None,
-                                         'other': None,
-                                         'any': False}},
-            'last': {'authorization': {'password': '',
-                                       'login': '',
-                                       'remember': True}}
-            }
+D = DataTemplate()
 
 
 def get_authorization(tmp_id=None, tmp_login=None, tmp_password=None, img=False):
@@ -261,7 +303,7 @@ class User(Resource):
             return make_success(False)
         return make_success(user=user.to_dict(all_req=True))
 
-    def put(self, user_id):
+    def put(self, user_id, request_data=False):
         errors = {'name': None,
                   'surname': None,
                   'email': None,
@@ -269,17 +311,39 @@ class User(Resource):
                   'new_password': None,
                   'photo': None}
         try:
-            user_id = int(user_id)
-            parser = reqparse.RequestParser()
-            for arg in ('name', 'surname', 'email', 'check_password', 'new_password', 'subscription', 'photo'):
-                parser.add_argument(arg)
-            args = parser.parse_args()
+            if request_data:
+                args = dict()
+                args.update(request.args)
+                args.update(request.files)
+            else:
+                parser = reqparse.RequestParser()
+                for arg in ('name', 'surname', 'email', 'check_password', 'new_password', 'subscription', 'photo'):
+                    parser.add_argument(arg)
+                args = parser.parse_args()
+            user = UserModel.query.filter_by(id=int(user_id)).first()
 
-            if not args['check_password']:
+            if args['photo']:
+                photo_name = None
+                try:
+                    ext = args['photo'][-1].filename.split('.')[-1]
+                    if ext.lower() in ['png', 'jpg', 'jpeg']:
+                        photo_name = '{}.{}'.format(user.id, 'png')
+                        args['photo'][-1].save('static/profiles/' + photo_name)
+                        user.photo = photo_name
+                        db.session.commit()
+                    else:
+                        raise TypeError
+                except Exception as e:
+                    print("Save photo during changing user info Error:\t", e)
+                    if photo_name:
+                        remove(photo_name)
+                        errors['photo'] = "Ошибка при загрузке фото."
+
+            if 'check_password' not in args or not args['check_password']:
+                if 'photo' in args and args['photo']:
+                    return make_success(errors=errors)
                 errors['check_password'] = "Введите старый пароль для подтверждения."
                 return make_success(False, errors=errors)
-
-            user = UserModel.query.filter_by(id=user_id).first()
 
             if not check_password_hash(user.password, args['check_password']):
                 errors['check_password'] = "Старый пароль введен неверно."
@@ -310,21 +374,6 @@ class User(Resource):
 
             user.subscription = 1 if args['subscription'] else 0
 
-            if args['photo']:
-                photo_name = None
-                try:
-                    ext = request.files['file'].filename.split('.')[-1]
-                    if ext.lower() in ['png', 'jpg', 'jpeg']:
-                        photo_name = '{}.{}'.format(user.id, ext)
-                        args['photo'].save('static/profiles/' + photo_name)
-                    else:
-                        errors['photo'] = "Ошибка при загрузке фото."
-                except Exception as e:
-                    print("Save photo during changing user info Error:\t", e)
-                    if photo_name:
-                        remove(photo_name)
-                        errors['photo'] = True
-
             db.session.commit()
             return make_success(errors=errors)
         except Exception as e:
@@ -352,13 +401,13 @@ def make_success(state=True, message='', **kwargs):
     if message:
         data['message'] = message
     data.update(kwargs)
-    return jsonify(data)
+    return data
 
 
 @app.route('/re_restore', methods=["GET", "POST"])
 def re_restore():
     t = 'Добро пожаловать в Re_restore!'
-    data = create_data()
+    data = D.get_data(base_req=True)
 
     data.update(
         {'slides': [url_for('static', filename='main_banners/{}.png'.format(i + 1)) for i in range(4)],
@@ -407,33 +456,23 @@ def sign_in(page, t, data, ready_data=None):
     if get_authorization()['id']:
         return redirect('/lk')
 
-    try:
-        response = get_self_response('/authorization', data=ready_data if ready_data else request.form, method='GET')
-        if response['success']:
-            a = get_authorization(response['success'], request.form['login'], request.form['password'], img=True)
-            if page == 'sign-up.html':
-                response = dict(get_self_response('/users/{}'.format(a['id']), method='GET'))
-                if response['success']:
-                    data['user'] = response['user']
-                    resp = make_response(render("lk.html", a=a, title=t, data=data))
-                else:
-                    return server_error()
-            else:
-                resp = make_response(render(page, a=a, title=t, data=data))
-            resp.set_cookie('userID', str(a['id']))
-            resp.set_cookie('userLogin', str(a['login']))
-            resp.set_cookie('userPassword', str(a['password']))
-        else:
-            data['errors']['authorization'].update(response['errors'])
-            data['errors']['authorization']['any'] = True
-            data['last']['authorization']['login'] = request.form['login']
-            data['last']['authorization']['password'] = request.form['password']
-            data['last']['authorization']['remember'] = True if 'remember_me' in request.form else False
-            resp = make_response(render(page, title=t, data=data))
-        return resp
-    except Exception as e:
-        print("Sign In (func) Error:\t", e)
-        return server_error()
+    response = get_self_response('/authorization', data=ready_data if ready_data else request.form, method='GET')
+    if response['success']:
+        a = get_authorization(response['success'], request.form['login'], request.form['password'], img=True)
+        if page in ('sign-up.html', 'lk.html'):
+            data = D.get_data(base_req=True, lk_req=True, tmp_a=a)
+            page = 'lk.html'
+        resp = make_response(render(page, a=a, title=t, data=data))
+        resp.set_cookie('userID', str(a['id']))
+        resp.set_cookie('userLogin', str(a['login']))
+        resp.set_cookie('userPassword', str(a['password']))
+    else:
+        data['errors']['authorization'].update(response['errors'])
+        data['errors']['authorization']['any'] = True
+        data['last']['authorization']['login'] = request.form['login']
+        data['last']['authorization']['password'] = request.form['password']
+        resp = make_response(render(page, title=t, data=data))
+    return resp
 
 
 @app.route('/sign-out')
@@ -448,73 +487,56 @@ def sign_out():
 def sign_up():
     if get_authorization()['id']:
         return redirect('/lk')
+
     t = 'Регистрация'
-    all_fields = ['name', 'surname', 'email', 'login', 'password']
+    data = D.get_data(base_req=True, reg_req=True)
 
-    try:
-        data = create_data()
-        data['errors']['registration'] = dict()
-        data['last']['registration'] = dict()
-        for field in all_fields + ['other']:
-            data['errors']['registration'][field] = None
-        for field in all_fields:
-            data['last']['registration'][field] = ''
-
-        if request.method == "GET":
-            return render('sign-up.html', t=t, data=data)
-
-        elif request.method == "POST":
-            form = dict(request.form)
-            for i in form:
-                if type(form[i]) is list:
-                    form[i] = form[i][-1]
-            if 'sign-in' in form:
-                return sign_in('sign-up.html', t, data)
-
-            response = get_self_response('/authorization', data=form, method='POST')
-            if response['success']:
-                return sign_in('lk.html', t='Успешно', data=data, ready_data={'login': form['login'],
-                                                                              'password': form['password']})
-            else:
-                data['errors']['registration'].update(response['errors'])
-                data['last']['registration'].update(form)
+    if request.method == "GET":
         return render('sign-up.html', t=t, data=data)
-    except Exception as e:
-        print("Sign Up (func) Error:\t", e)
-        return server_error()
+
+    elif request.method == "POST":
+        form = dict(request.form)
+        for i in form:
+            if type(form[i]) is list:
+                form[i] = form[i][-1]
+        if 'sign-in' in form:
+            return sign_in('sign-up.html', t, data)
+
+        response = get_self_response('/authorization', data=form, method='POST')
+        if response['success']:
+            return sign_in('lk.html', t='Успешно', data=data, ready_data={'login': form['login'],
+                                                                          'password': form['password']})
+        else:
+            data['errors']['registration'].update(response['errors'])
+            data['last']['registration'].update(form)
+    return render('sign-up.html', t=t, data=data)
 
 
 @app.route('/lk', methods=["GET", "POST"])
 def lk():
-    def get():
-        response = dict(get_self_response('/users/{}'.format(authorization['id']), method='GET'))
-        if response['success']:
-            data['user'] = response['user']
-            return render("lk.html", title=t, data=data)
-        return server_error()
-
     t = "Личный кабинет"
     if verify_curr_admin():
         return redirect('/lk-admin')
     elif verify_authorization():
-        authorization = get_authorization()
-        data = create_data()
-        data['errors']['change_profile_info'] = {'name': None,
-                                                 'surname': None,
-                                                 'email': None,
-                                                 'check_password': None,
-                                                 'new_password': None,
-                                                 'photo': None}
+        data = D.get_data(base_req=True, lk_req=True)
         if request.method == 'GET':
-            return get()
+            return render("lk.html", title=t, data=data)
 
-        elif request.method == 'POST':
-            if 'changeUserInfoBtn' in request.form:
-                response = dict(get_self_response('/users/{}'.format(authorization['id']),
-                                                  data=request.form, method='PUT'))
+        form = dict(request.form)
+        if request.method == 'POST':
+            if 'changeUserInfoBtn' in form:
+                response = dict(get_self_response('/users/{}'.format(get_authorization()['id']),
+                                                  data=form, method='PUT'))
+                data = D.get_data(base_req=True, lk_req=True)
                 data['errors']['change_profile_info'].update(response['errors'])
-                return get()
+                return render("lk.html", title=t, data=data)
+            elif 'photo' in request.files:
+                response = userAPI.put(get_authorization()['id'], request_data=True)
+                data = D.get_data(base_req=True, lk_req=True)
+                data['errors']['change_profile_info'].update(response['errors'])
+                return render("lk.html", title=t, data=data)
             return server_error()
+
     return redirect(HOME)
 
 
@@ -522,7 +544,7 @@ def lk():
 def lk_admin_general():
     t = "Личный кабинет (ADMIN)"
     if verify_curr_admin():
-        data = create_data()
+        data = D.get_data(base_req=True)
 
         return render('lk-admin.html', title=t, data=data)
     elif verify_authorization():
@@ -550,7 +572,7 @@ def get_self_response(url, data={}, method='GET'):
 
 
 def error(err=520, message='Что-то пошло не так :('):
-    data = create_data()
+    data = D.get_data(base_req=True)
     data.update({'message': message, 'type': err})
     return render('error.html', data=data)
 
@@ -575,6 +597,8 @@ def server_error(err=None):
 def index():
     return redirect(HOME)
 
+
+userAPI = User()
 
 if __name__ == '__main__':
     db.create_all()

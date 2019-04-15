@@ -2,21 +2,17 @@
 
 {% block style %}
     <style type="text/css">
-        .content { margin-left: 50px; }
+        .content { margin-left: 16px; }
         .profile-photo {
-            width: 260px;
+            max-width: 260px;
             max-height: 260px;
             height: auto;
+            width: auto;
             border-radius: 5px;
         }
         .photo-place {
             width: 260px;
             height: 260px;
-            margin-left: 16px;
-        }
-        .base-title {
-            margin-top: 40px;
-            color: orange;
         }
         .info {
             float: right;
@@ -45,6 +41,10 @@
             margin-bottom: 5px;
             margin-left: 22px;
         }
+        .choose-photo {
+            margin-top: 30px;
+            width: 260px;
+        }
         .card {
             width: 700px;
             margin-bottom: 10px;
@@ -56,11 +56,11 @@
 
 {% block content %}
     <br><br><br>
-    <div class="photo-place one-line">
-        <p style="text-align: center"><img src="{{ data['user']['photo'] }}", alt="Упс...", class="profile-photo"></p>
+    <div class="photo-place content one-line">
+        <img src="{{ data['user']['photo'] }}", alt="Упс...", class="profile-photo">
     </div>
 
-    <div class="badge badge-primary text-wrap one-line info">
+    <div class="badge badge-primary text-wrap info">
         <form method="post">
             <table>
                 <tr>
@@ -121,10 +121,25 @@
             </table>
             <p>
                 <input type="checkbox" id="subscriptionCheck" name="subscription" {% if data['user']['subscription'] %}checked{% endif %}>
-                <label for="subscriptionCheck" style="margin-top: 20px;">Подписка на e-mail рассылку</label>
+                <label for="subscriptionCheck" style="margin-top: 20px; margin-left: 5px;">Подписка на e-mail рассылку</label>
             </p>
             <button type="submit" class="btn btn-info one-line" style="margin-bottom: 5px;" name="changeUserInfoBtn">Сохранить</button>
         </form>
         <a href="/delete-profile/{{ authorization['id'] }}" class="btn btn-secondary delete-profile-btn one-line" name="deleteUser">Удалить профиль</a>
     </div>
+
+    <form method="post" enctype="multipart/form-data">
+        <div class="input-group content choose-photo">
+            <div class="custom-file">
+                <input type="file" class="custom-file-input" id="inputFile1" aria-describedby="inputGroupFileAddon04" name="photo">
+                <label class="custom-file-label" for="inputFile1">Выберите фото</label>
+            </div>
+            <div class="input-group-append">
+                <button class="btn btn-outline-secondary" type="submit">Ок</button>
+            </div>
+        </div>
+        {% if data['errors']['change_profile_info']['photo'] %}
+            <p class="change-info-error">{{ data['errors']['change_profile_info']['photo'] }}</p>
+        {% endif %}
+    </form>
 {% endblock %}

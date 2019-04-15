@@ -49,7 +49,7 @@
         <div class="collapse navbar-collapse flex-row-reverse" id="navbarNavAltMarkup1">
             <div class="navbar-nav">
                 {% if authorization['id'] %}
-                    <a href="/lk"><img src="{% if authorization['image'] %}{{ authorization['image'] }}{% else %}static/profiles/NoPhoto.jpg{% endif %}",
+                    <a href="/lk"><img src="{% if authorization['photo'] %}{{ authorization['photo'] }}{% else %}static/profiles/NoPhoto.jpg{% endif %}",
                                        alt="Упс..." class="nav-item nav-link profile-mini-photo"></a>
                     <a class="nav-item nav-link" style="margin-top: 5px;" href="/lk">{{ authorization['login'] }}</a>
                     <div class="nav-item nav-link" style="margin-top: 5px;">/</div>
@@ -85,13 +85,6 @@
                                     {{ data['errors']['authorization']['other'] }}
                                 </p>
                             {% endif %}
-
-                            <div class="form-check"  style="margin-bottom: 10px;">
-                                <input type="checkbox" class="form-check-input" id="rememberCheck" name="remember_me" {% if data['last']['authorization']['remember'] %}checked{% endif %}>
-                                <label class="form-check-label" for="rememberCheck">
-                                    Запомнить меня
-                                </label>
-                            </div>
                             <button type="submit" class="btn btn-info" name="sign-in">Войти</button>
                         </form>
                     </li>
