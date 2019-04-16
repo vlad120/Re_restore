@@ -3,6 +3,10 @@
 {% block style %}
     <style type="text/css">
         .content { margin-left: 16px; }
+        .base-title {
+            margin-top: 70px;
+            color: rebeccapurple;
+        }
         .profile-photo {
             max-width: 260px;
             max-height: 260px;
@@ -55,7 +59,8 @@
 
 
 {% block content %}
-    <br><br><br>
+    <h2 class="content base-title"><b>Личный кабинет</b></h2>
+    <br>
     <div class="photo-place content one-line">
         <img src="{{ data['user']['photo'] }}", alt="Упс...", class="profile-photo">
     </div>

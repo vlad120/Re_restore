@@ -1,71 +1,9 @@
-from flask import Flask, render_template, redirect, request, make_response, jsonify, url_for
+from flask import Flask, render_template, redirect, request, make_response, url_for
 from flask_restful import reqparse, Api, Resource
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import check_password_hash, generate_password_hash
-import requests
 from os import remove
 
-
-class DataTemplate:
-    def get_data(self, tmp_a=False, base_req=False, lk_req=False, reg_req=False):
-        data = dict()
-        if base_req:
-            data.update(self.get_base_data())
-        if lk_req:
-            t = self.get_lk_data(tmp_a)
-            data['user'] = t['user']
-            data['errors'].update(t['errors'])
-        if reg_req:
-            t = self.get_registration_data()
-            data['last'].update(t['last'])
-            data['errors'].update(t['errors'])
-        return data
-
-    def get_base_data(self):
-        return {'menu_items': [{'name': 'tablets',
-                                'link': '#'},
-                               {'name': 'Смартфоны',
-                                'link': '#'}],
-                'errors': {'authorization': {'password': None,
-                                             'login': None,
-                                             'other': None,
-                                             'any': False}},
-                'last': {'authorization': {'password': '',
-                                           'login': ''}}
-                }
-
-    def get_lk_data(self, tmp_a=False):
-        response = dict(get_self_response('/users/{}'.format((tmp_a if tmp_a else get_authorization())['id']),
-                                          method='GET'))
-        if response['success']:
-            return {'user': response['user'],
-                    'errors': {'change_profile_info': {'name': None,
-                                                       'surname': None,
-                                                       'email': None,
-                                                       'check_password': None,
-                                                       'new_password': None,
-                                                       'photo': None}},
-                    }
-
-    def get_sign_in_data(self):
-        pass
-
-    def get_registration_data(self):
-        data = {'errors': {'registration': {}},
-                'last': {'registration': {}}
-                }
-        for i in ['name', 'surname', 'email', 'login', 'password']:
-            data['errors']['registration'][i] = None
-            data['last']['registration'][i] = ''
-        return data
-
-
-host = '127.0.0.1'
-port = 8080
-
-admin_id = -1
-admin_login = "admin"
-admin_password = "admin"
 
 app = Flask(__name__)
 api = Api(app)
@@ -73,57 +11,6 @@ app.config['SECRET_KEY'] = 'myOwn_secretKey_nobodyCan_hackIt'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///all_data.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
-
-HOME = '/re_restore'
-
-D = DataTemplate()
-
-
-def get_authorization(tmp_id=None, tmp_login=None, tmp_password=None, img=False):
-    a = {'id': tmp_id if tmp_id else request.cookies.get('userID'),
-         'login': tmp_login if tmp_login else request.cookies.get('userLogin'),
-         'password': tmp_password if tmp_password else request.cookies.get('userPassword')}
-    if img and a['id']:
-        try:
-            a.update(UserModel.query.filter_by(id=a['id']).first().to_dict(photo_req=True))
-        except Exception as e:
-            print("Get authorization photo Error:\t", e)
-            sign_out()
-            for i in a:
-                a[i] = None
-    return a
-
-
-def verify_curr_admin():
-    a = get_authorization()
-    if a and a['id'] == admin_id and a['login'] == admin_login and \
-            a['password'] == admin_password:
-        return True
-    return False
-
-
-def verify_authorization(admin=False):
-    if admin and verify_curr_admin():
-        return True
-    a = get_authorization()
-    try:
-        user = UserModel.query.filter_by(id=a['id']).first()
-        if user and a['login'] == user.login and \
-                check_password_hash(user.password, a['password']):
-            return True
-        sign_out()
-        return False
-    except:
-        sign_out()
-        return False
-
-
-def render(template, a=None, **kwargs):
-    authorization = a if a else get_authorization(img=True)
-    if (not a) and (not verify_authorization(admin=True)):
-        sign_out()
-        return render_template(template, authorization=get_authorization(), **kwargs)
-    return render_template(template, authorization=authorization, **kwargs)
 
 
 class GoodsModel(db.Model):
@@ -133,13 +20,15 @@ class GoodsModel(db.Model):
     short_description = db.Column(db.String(200), nullable=False)
     price = db.Column(db.Float, nullable=False)
     count = db.Column(db.Integer, nullable=False)
+    category = db.Column(db.String(100), nullable=False)
     photos = db.Column(db.String(500))
 
     def __repr__(self):
         return '<Goods {} {} {}руб {}шт>'.format(self.id, self.name, self.price, self.count)
 
     def to_dict(self, id_req=True, name_req=True, description_req=False,
-                short_description_req=True, price_req=True, count_req=False, photos_req=False):
+                short_description_req=True, price_req=True, count_req=False,
+                category_req=True, full_link_req=False, photos_req=False):
         d = dict()
         if id_req:
             d['id'] = self.id
@@ -153,8 +42,35 @@ class GoodsModel(db.Model):
             d['price'] = self.price
         if count_req:
             d['count'] = self.count
+        if category_req:
+            d['category'] = self.category
+        if full_link_req:
+            d['full_link'] = '{}/{}/{}'.format(HOME, self.category.strip('/'), self.id)
         if photos_req:
             d['photos'] = [photo.strip() for photo in self.photos.split(';')]
+        return d
+
+
+class OrderModel(db.Model):
+    id = db.Column(db.Integer, unique=True, primary_key=True, autoincrement=True)
+    total = db.Column(db.Float, nullable=False)
+    goods = db.Column(db.JSON, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user_model.id'), nullable=False)
+    user = db.relationship('UserModel', backref=db.backref('OrderModel'))
+
+    def __repr__(self):
+        return '<Order {} {}руб>'.format(self.id, self.total)
+
+    def to_dict(self, id_req=True, total_req=True, goods_req=False, user_req=True):
+        d = dict()
+        if id_req:
+            d['id'] = self.id
+        if total_req:
+            d['total'] = self.total
+        if goods_req:
+            d['goods'] = dict(self.goods)['goods']
+        if user_req:
+            d['user'] = self.user.to_dict(login_req=True)
         return d
 
 
@@ -175,7 +91,7 @@ class UserModel(db.Model):
                 email_req=False, login_req=False, photo_req=False,
                 subscr_req=False, all_req=False):
         if all_req:
-            id_req, name_req, surname_req, email_req, login_req, photo_req, subscr_req = tuple(True for i in range(7))
+            id_req, name_req, surname_req, email_req, login_req, photo_req, subscr_req = (True for _ in range(7))
         d = dict()
         if id_req:
             d['id'] = self.id
@@ -194,9 +110,143 @@ class UserModel(db.Model):
         return d
 
 
+class DataTemplate:
+    def get_data(self, tmp_a=None, base_req=False, main_req=False,
+                 lk_req=False, lk_admin_req=False, reg_req=False):
+        data = dict()
+        if base_req:
+            data.update(self.get_base_data())
+        if main_req:
+            data.update(self.get_main_data())
+        if lk_req:
+            t = self.get_lk_data(tmp_a)
+            data['user'] = t['user']
+            data['errors'].update(t['errors'])
+        if lk_admin_req:
+            t = self.get_lk_admin_data(tmp_a)
+            data['errors'].update(t.pop('errors'))
+            data.update(t)
+        if reg_req:
+            t = self.get_registration_data()
+            data['last'].update(t['last'])
+            data['errors'].update(t['errors'])
+        return data
+
+    def get_base_data(self):
+        return {'menu_items': [{'name': 'tablets',
+                                'link': '#'},
+                               {'name': 'Смартфоны',
+                                'link': '#'}],
+                'errors': {'authorization': {'password': None,
+                                             'login': None,
+                                             'other': None,
+                                             'any': False}},
+                'last': {'authorization': {'password': '',
+                                           'login': ''}}
+                }
+
+    def get_main_data(self):
+        return {'slides': [url_for('static', filename='main_banners/{}.png'.format(i + 1)) for i in range(4)],
+                'len_slides': 4,
+                'goods': [{'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
+                           'short-description': 'Уникальный планшет, который вы должны купить',
+                           'price': 25000,
+                           'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')},
+                          {'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
+                           'short-description': 'Уникальный планшет, который вы должны купить',
+                           'price': 25000,
+                           'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')},
+                          {'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
+                           'short-description': 'Уникальный планшет, который вы должны купить',
+                           'price': 25000,
+                           'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')},
+                          {'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
+                           'short-description': 'Уникальный планшет, который вы должны купить',
+                           'price': 25000,
+                           'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')},
+                          {'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
+                           'short-description': 'Уникальный планшет, который вы должны купить',
+                           'price': 25000,
+                           'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')}]
+                }
+
+    def get_lk_data(self, tmp_a=False):
+        response = userAPI.get((tmp_a if tmp_a else get_authorization())['id'])
+        if response['success']:
+            return {'user': response['user'],
+                    'errors': {'change_profile_info': {'name': None,
+                                                       'surname': None,
+                                                       'email': None,
+                                                       'check_password': None,
+                                                       'new_password': None,
+                                                       'photo': None}},
+                    }
+
+    def get_lk_admin_data(self, tmp_a=None):
+        goods_response = goods_listAPI.get()
+        orders_response = order_listAPI.get(tmp_a)
+        users_response = user_listAPI.get(tmp_a)
+        return {'goods': goods_response['goods'] if goods_response['success'] else [],
+                'orders': orders_response['orders'] if orders_response['success'] else [],
+                'users': users_response['users'] if users_response['success'] else [],
+                'errors': {'get_data': {'goods': None if goods_response['success'] else goods_response['message'],
+                                        'orders': None if orders_response['success'] else orders_response['message'],
+                                        'users': None if users_response['success'] else users_response['message']}}
+                }
+
+    def get_sign_in_data(self):
+        pass
+
+    def get_registration_data(self):
+        data = {'errors': {'registration': {}},
+                'last': {'registration': {}}
+                }
+        for i in ['name', 'surname', 'email', 'login', 'password']:
+            data['errors']['registration'][i] = None
+            data['last']['registration'][i] = ''
+        return data
+
+
+def get_authorization(tmp_id=None, tmp_login=None, tmp_password=None, img=False):
+    a = {'id': tmp_id if tmp_id else request.cookies.get('userID'),
+         'login': tmp_login if tmp_login else request.cookies.get('userLogin'),
+         'password': tmp_password if tmp_password else request.cookies.get('userPassword')}
+    if img and a['id']:
+        user = UserModel.query.filter_by(id=a['id']).first()
+        if user:
+            a.update(user.to_dict(photo_req=True))
+        else:
+            a['photo'] = 'static/profiles/NoPhoto.jpg'
+    return a
+
+
+def verify_curr_admin(a=None):
+    a = a if a else get_authorization()
+    if a and a['id'] and int(a['id']) == ADMIN_ID and a['login'] == ADMIN_LOGIN and \
+            a['password'] == ADMIN_PASSWORD:
+        return True
+    return False
+
+
+def verify_authorization(admin=False):
+    if admin and verify_curr_admin():
+        return True
+    a = get_authorization()
+    try:
+        user = UserModel.query.filter_by(id=a['id']).first()
+        if user and a['login'] == user.login and \
+                check_password_hash(user.password, a['password']):
+            return True
+        sign_out()
+        return False
+    except:
+        sign_out()
+        return False
+
+
 class Authorization(Resource):
-    # Аутентификация
-    def get(self):
+    # Авторизация
+    def get(self, request_data=None):
         errors = {'already_authorized': False,
                   'password': None,
                   'login': None,
@@ -209,7 +259,10 @@ class Authorization(Resource):
             parser = reqparse.RequestParser()
             for arg in ('login', 'password'):
                 parser.add_argument(arg)
-            args = parser.parse_args()
+            args = dict(parser.parse_args())
+            if request_data:
+                args.update(request_data)
+
             login = args['login']
             password = args['password']
 
@@ -219,8 +272,8 @@ class Authorization(Resource):
                         errors[field] = "Поле дожно быть заполнено."
                 return make_success(False, errors=errors)
 
-            if login == admin_login and password == admin_password:
-                return make_success(admin_id, errors=errors)
+            if login == ADMIN_LOGIN and password == ADMIN_PASSWORD:
+                return make_success(ADMIN_ID, errors=errors)
 
             user = UserModel.query.filter_by(login=login).first()
             if user:
@@ -235,7 +288,7 @@ class Authorization(Resource):
         return make_success(False, errors=errors)
 
     # Регистрация
-    def post(self):
+    def post(self, request_data=None):
         all_fields = ['name', 'surname', 'email', 'login', 'password']
         errors = dict()
         for field in all_fields + ['other']:
@@ -246,13 +299,20 @@ class Authorization(Resource):
                 return make_success(False)
 
             parser = reqparse.RequestParser()
-            for field in all_fields + ['subscription']:
-                parser.add_argument(field)
+            for arg in all_fields + ['subscription']:
+                parser.add_argument(arg)
             args = dict(parser.parse_args())
+            if request_data:
+                for i in request_data:
+                    if i in args:
+                        args[i] = request_data[i]
+
+            login = args['login']
+            password = args['password']
 
             # проверка на пустоту
             for field in all_fields:
-                if not args[field]:
+                if not args[field] and args[field] is not 'subscription':
                     errors[field] = 'Поле должно быть заполнено.'
                 else:
                     args[field] = args[field].strip()
@@ -260,8 +320,8 @@ class Authorization(Resource):
                 return make_success(False, errors=errors)
 
             # на занятый логин
-            if (args['login'] == admin_login or
-                    UserModel.query.filter_by(login=args['login']).first()):
+            if (login == ADMIN_LOGIN or
+                    UserModel.query.filter_by(login=login).first()):
                 errors['login'] = "Логин занят другим пользователем. Придумайте другой."
 
             # на длину полей (для базы данных)
@@ -271,17 +331,17 @@ class Authorization(Resource):
                 errors['surname'] = "Слишком длинная фамилия (максимум 80 символов)."
             if len(args['email']) > 120:
                 errors['email'] = "Слишком длинный e-mail (максимум 120 символов)."
-            if len(args['login']) > 80 and not errors['login']:
+            if len(login) > 80 and not errors['login']:
                 errors['login'] = "Слишком длинный логин (максимум 80 символа)."
-            if len(args['password']) > 100:
+            if len(password) > 100:
                 errors['password'] = "Слишком длинный пароль (максимум 100 символов)."
-            if len(args['password']) < 3:
+            if len(password) < 3:
                 errors['password'] = "Слишком простой пароль (не менее 3 символов)."
 
             if any(err for err in errors.values()):
                 return make_success(False, errors=errors)
 
-            args['password'] = generate_password_hash(args['password'])
+            args['password'] = generate_password_hash(password)
             args['subscription'] = 1 if args['subscription'] else 0
 
             new_user = UserModel(**args)
@@ -297,13 +357,12 @@ class Authorization(Resource):
 
 class User(Resource):
     def get(self, user_id):
-        user_id = int(user_id)
         user = UserModel.query.filter_by(id=user_id).first()
         if not user:
             return make_success(False)
         return make_success(user=user.to_dict(all_req=True))
 
-    def put(self, user_id, request_data=False):
+    def put(self, user_id, request_data=None):
         errors = {'name': None,
                   'surname': None,
                   'email': None,
@@ -311,24 +370,22 @@ class User(Resource):
                   'new_password': None,
                   'photo': None}
         try:
+            parser = reqparse.RequestParser()
+            for arg in ('name', 'surname', 'email', 'check_password', 'new_password', 'subscription', 'photo'):
+                parser.add_argument(arg)
+            args = parser.parse_args()
             if request_data:
-                args = dict()
-                args.update(request.args)
-                args.update(request.files)
-            else:
-                parser = reqparse.RequestParser()
-                for arg in ('name', 'surname', 'email', 'check_password', 'new_password', 'subscription', 'photo'):
-                    parser.add_argument(arg)
-                args = parser.parse_args()
-            user = UserModel.query.filter_by(id=int(user_id)).first()
+                args.update(request_data)
 
-            if args['photo']:
+            user = UserModel.query.filter_by(id=user_id).first()
+
+            if 'photo' in args and args['photo']:
                 photo_name = None
                 try:
-                    ext = args['photo'][-1].filename.split('.')[-1]
+                    ext = args['photo'].filename.split('.')[-1]
                     if ext.lower() in ['png', 'jpg', 'jpeg']:
                         photo_name = '{}.{}'.format(user.id, 'png')
-                        args['photo'][-1].save('static/profiles/' + photo_name)
+                        args['photo'].save('static/profiles/' + photo_name)
                         user.photo = photo_name
                         db.session.commit()
                     else:
@@ -382,7 +439,7 @@ class User(Resource):
 
     # def delete(self, user_id):
     #     user_id = int(user_id)
-    #     if get_authorization()['id'] == admin_id:
+    #     if get_authorization()['id'] == ADMIN_ID:
     #         exist = user_exist(user_id)
     #         if not exist[0]:
     #             return success(False, 'User not found')
@@ -396,6 +453,37 @@ class User(Resource):
     #     return success(False, 'Access error')
 
 
+class UserList(Resource):
+    def get(self, tmp_a=None):
+        if verify_curr_admin(tmp_a):
+            try:
+                return make_success(users=[i.to_dict(name_req=True, surname_req=True,
+                                                     email_req=True, login_req=True) for i in UserModel.query.all()])
+            except:
+                return make_success(False, message='Server Error')
+        return make_success(False, message='Access Error')
+
+
+class GoodsList(Resource):
+    def get(self):
+        try:
+            return make_success(goods=[i.to_dict(full_link_req=True) for i in GoodsModel.query.all()])
+        except Exception as e:
+            print(e)
+            return make_success(False, message='Server Error')
+
+
+class OrdersList(Resource):
+    def get(self, tmp_a=None):
+        if verify_curr_admin(tmp_a):
+            try:
+                return make_success(orders=[i.to_dict(goods_req=True) for i in OrderModel.query.all()])
+            except Exception as e:
+                print(e)
+                return make_success(False, message='Server Error')
+        return make_success(False, message='Access Error')
+
+
 def make_success(state=True, message='', **kwargs):
     data = {'success': state if state else False}
     if message:
@@ -404,36 +492,21 @@ def make_success(state=True, message='', **kwargs):
     return data
 
 
+def get_request_data(files=False):
+    form = dict(request.form)
+    if files:
+        form.update(dict(request.files))
+    for i in form:
+        if type(form[i]) is list:
+            form[i] = form[i][-1]
+    return form
+
+
 @app.route('/re_restore', methods=["GET", "POST"])
 def re_restore():
     t = 'Добро пожаловать в Re_restore!'
-    data = D.get_data(base_req=True)
+    data = D.get_data(base_req=True, main_req=True)
 
-    data.update(
-        {'slides': [url_for('static', filename='main_banners/{}.png'.format(i + 1)) for i in range(4)],
-         'len_slides': 4,
-         'goods': [{'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
-                    'short-description': 'Уникальный планшет, который вы должны купить',
-                    'price': 25000,
-                    'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')},
-                   {'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
-                    'short-description': 'Уникальный планшет, который вы должны купить',
-                    'price': 25000,
-                    'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')},
-                   {'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
-                    'short-description': 'Уникальный планшет, который вы должны купить',
-                    'price': 25000,
-                    'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')},
-                   {'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
-                    'short-description': 'Уникальный планшет, который вы должны купить',
-                    'price': 25000,
-                    'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')},
-                   {'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
-                    'short-description': 'Уникальный планшет, который вы должны купить',
-                    'price': 25000,
-                    'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')}]
-         }
-    )
     if request.method == "GET":
         return render('index.html', title=t, data=data)
 
@@ -456,7 +529,7 @@ def sign_in(page, t, data, ready_data=None):
     if get_authorization()['id']:
         return redirect('/lk')
 
-    response = get_self_response('/authorization', data=ready_data if ready_data else request.form, method='GET')
+    response = authorizationAPI.get(request_data=ready_data if ready_data else get_request_data())
     if response['success']:
         a = get_authorization(response['success'], request.form['login'], request.form['password'], img=True)
         if page in ('sign-up.html', 'lk.html'):
@@ -495,14 +568,11 @@ def sign_up():
         return render('sign-up.html', t=t, data=data)
 
     elif request.method == "POST":
-        form = dict(request.form)
-        for i in form:
-            if type(form[i]) is list:
-                form[i] = form[i][-1]
+        form = get_request_data()
         if 'sign-in' in form:
             return sign_in('sign-up.html', t, data)
 
-        response = get_self_response('/authorization', data=form, method='POST')
+        response = authorizationAPI.post(request_data=form)
         if response['success']:
             return sign_in('lk.html', t='Успешно', data=data, ready_data={'login': form['login'],
                                                                           'password': form['password']})
@@ -522,53 +592,35 @@ def lk():
         if request.method == 'GET':
             return render("lk.html", title=t, data=data)
 
-        form = dict(request.form)
         if request.method == 'POST':
-            if 'changeUserInfoBtn' in form:
-                response = dict(get_self_response('/users/{}'.format(get_authorization()['id']),
-                                                  data=form, method='PUT'))
+            if 'changeUserInfoBtn' in request.form:
+                response = userAPI.put(get_authorization()['id'], request_data=get_request_data())
                 data = D.get_data(base_req=True, lk_req=True)
                 data['errors']['change_profile_info'].update(response['errors'])
                 return render("lk.html", title=t, data=data)
             elif 'photo' in request.files:
-                response = userAPI.put(get_authorization()['id'], request_data=True)
+                response = userAPI.put(get_authorization()['id'], request_data=get_request_data(files=True))
                 data = D.get_data(base_req=True, lk_req=True)
                 data['errors']['change_profile_info'].update(response['errors'])
                 return render("lk.html", title=t, data=data)
             return server_error()
-
     return redirect(HOME)
 
 
 @app.route('/lk-admin', methods=["GET", "POST"])
-def lk_admin_general():
+def lk_admin():
     t = "Личный кабинет (ADMIN)"
     if verify_curr_admin():
-        data = D.get_data(base_req=True)
+        data = D.get_data(base_req=True, lk_admin_req=True)
+        if request.method == 'GET':
+            return render("lk-admin.html", title=t, data=data)
 
-        return render('lk-admin.html', title=t, data=data)
+        form = get_request_data()
+        if request.method == 'POST':
+            pass
     elif verify_authorization():
-        return redirect('/lk')
+        return redirect('/lk-admin')
     return redirect(HOME)
-
-
-@app.route('/lk-admin/<string:section>', methods=["GET", "POST"])
-def lk_admin_section(section):
-    pass
-
-
-def get_self_response(url, data={}, method='GET'):
-    try:
-        if method == 'GET':
-            return requests.get('http://{}:{}'.format(host, port) + url, json=data).json()
-        if method == 'POST':
-            return requests.post('http://{}:{}'.format(host, port) + url, json=data).json()
-        if method == 'DELETE':
-            return requests.delete('http://{}:{}'.format(host, port) + url, json=data).json()
-        if method == 'PUT':
-            return requests.put('http://{}:{}'.format(host, port) + url, json=data).json()
-    except:
-        return {'success': False}
 
 
 def error(err=520, message='Что-то пошло не так :('):
@@ -598,12 +650,48 @@ def index():
     return redirect(HOME)
 
 
+def render(template, a=None, **kwargs):
+    authorization = a if a else get_authorization(img=True)
+    if (not a) and (not verify_authorization(admin=True)):
+        sign_out()
+        return render_template(template, authorization=get_authorization(), **kwargs)
+    return render_template(template, authorization=authorization, **kwargs)
+
+
+HOME = '/re_restore'
+HOST = '127.0.0.1'
+PORT = 8080
+
+ADMIN_ID = -1
+ADMIN_LOGIN = "admin"
+ADMIN_PASSWORD = "admin"
+
 userAPI = User()
+user_listAPI = UserList()
+goods_listAPI = GoodsList()
+order_listAPI = OrdersList()
+authorizationAPI = Authorization()
+
+D = DataTemplate()
 
 if __name__ == '__main__':
     db.create_all()
 
-    api.add_resource(Authorization, '/authorization')
-    api.add_resource(User, '/users/<int:user_id>')
+    # new_goods = GoodsModel(name="iPad 2017", description="Full description", short_description="Short description",
+    #                        price=26000, count=100, photos="1.png", category="tablets")
+    # db.session.add(new_goods)
+    # db.session.commit()
+    #
+    # new_order = OrderModel(total=52000, user_id=1,
+    #                        goods={'goods': [{'goods': GoodsModel.query.filter_by(id=1).first().to_dict(full_link_req=True),
+    #                                          'count': 7}]})
+    # db.session.add(new_order)
+    # db.session.commit()
 
-    app.run(port=port, host=host)
+    api.add_resource(Authorization, '/authorization')
+    api.add_resource(UserList, '/users')
+    api.add_resource(User, '/users/<int:user_id>')
+    api.add_resource(GoodsList, '/goods')
+    api.add_resource(OrdersList, '/orders')
+
+    app.run(port=PORT, host=HOST)

@@ -2,49 +2,132 @@
 
 {% block style %}
     <style type="text/css">
-        .content { margin-left: 50px; }
+        .content { margin-left: 16px; }
         .base-title {
-            margin-top: 40px;
-            color: midnightblue;
+            margin-top: 70px;
+            color: rebeccapurple;
         }
         .info {
-            padding-top: 15px;
-            font-size: 20px;
+            float: right;
+            margin-right: 16px;
+            font-size: 22px;
+            font-style: italic;
             text-align: center;
             width: 300px;
             background-color: steelblue;
             color: yellow;
-            font-style: italic;
         }
-        .card { margin-bottom: 10px; }
-        .card-content { display: inline-block; }
+        .sections {
+            width: 200px;
+        }
+        .goods-card {
+            margin-bottom: 10px;
+            margin-right: 16px;
+        }
+        .card-header {
+            height: 40px;
+            padding-top: 7px;
+        }
+        .card-text { margin-bottom: 0; }
+        .card-header-text {
+            font-size: 18px;
+            color: seagreen;
+            text-decoration: none;
+        }
+        .card-header-text:hover { text-decoration: none; }
         .btn-dark { float: right; }
+        .one-line { display: inline-block; }
+        .data-lk-admin-error { color: red; }
     </style>
 {% endblock %}
 
 
 {% block content %}
-    <h3 class="content base-title">Личный кабинет</h3>
-    <br>
+    <div class="badge badge-primary text-wrap info">
+        <h2 style="margin-top: 5px;">Admin</h2>
+    </div>
+    <h2 class="content base-title"><b>Личный кабинет</b></h2>
+    <br><br>
     <div class="content">
-        <div class="badge badge-primary text-wrap content info">
-            <h2>Admin</h2>
-        </div>
-        <br>
-        {% if data['users'] %}
-            <h4 class="base-title">Список пользователей:</h4>
-            <br>
-            {% for user in data['users'] %}
-                <div class="card w-75 content">
-                    <div class="card-body">
-                        <h5 class="card-title card-content"><i><span style="color: midnightblue">id</span> <b>{{ user['id'] }}</b></i> - <span style="color: forestgreen">{{ user['name'] }} {{ user['surname'] }}</span></h5>
-                        <form method="post" style="float: right">
-                            <input type="hidden" class="card-content" name="delete_user" value="{{ user['id'] }}">
-                            <button type="submit" class="btn btn-dark card-content">Удалить пользователя</button>
-                        </form>
+        <div class="row">
+            <div class="col-4">
+                <div class="list-group sections" id="list-tab" role="tablist">
+                    <a class="list-group-item list-group-item-action active" id="goods-list" data-toggle="list" href="#list-goods" role="tab" name="getAllGoods">Товары</a>
+                    <a class="list-group-item list-group-item-action" id="orders-list" data-toggle="list" href="#list-orders" role="tab" name="getAllOrders">Заказы</a>
+                    <a class="list-group-item list-group-item-action" id="users-list" data-toggle="list" href="#list-users" role="tab" name="getAllUsers">Пользователи</a>
+                </div>
+            </div>
+            <div class="col-8">
+                <div class="tab-content" id="nav-tabContent">
+                    <div class="tab-pane fade show active" id="list-goods" role="tabpanel" aria-labelledby="goods-list">
+                        {% if data['errors']['goods'] %}
+                            <h3 class="data-lk-admin-error">{{ data['errors']['goods'] }}</h3>
+                        {% endif %}
+                        {% for item in data['goods'] %}
+                            <div class="card border-info mb-3 goods-card">
+                                <div class="card-header card-header-text"><b>№{{ item['id'] }}: <a class="card-header-text" href="{{ item['full_link'] }}"><i>{{ item['name'] }}</i></a></b></div>
+                                <div class="card-body">
+                                    <p class="card-text">{{ item['short_description'] }}</p>
+                                    <form method="post">
+                                        <input type="hidden" name="{{ item['id'] }}">
+                                        <button type="submit" class="btn btn-dark" name="deleteGoods">Удалить</button>
+                                    </form>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                    <div class="tab-pane fade" id="list-orders" role="tabpanel" aria-labelledby="orders-list">
+                        {% if data['errors']['orders'] %}
+                            <h3 class="data-lk-admin-error">{{ data['errors']['orders'] }}</h3>
+                        {% endif %}
+                        {% for item in data['orders'] %}
+                            <div class="card border-info mb-3 goods-card">
+                                <div class="card-header card-header-text"><b>№{{ item['id'] }} от <i>{{ item['user']['login'] }}</i></b></div>
+                                <div class="card-body">
+                                    <ul class="list-group list-group-horizontal-sm">
+                                        {% for i in item['goods'] %}
+                                            <li class="list-group-item"><a href="{{ i['goods']['full_link'] }}">{{ i['goods']['id'] }}</a> - {{ i['goods']['price'] }}руб * {{ i['count']}}шт</li>
+                                        {% endfor %}
+
+                                    </ul>
+                                    -------------------------------------
+                                    <p class="card-text"><b>Итого:</b> {{ item['total'] }}руб</p>
+                                    <form method="post" class="one-line" style="float: right;">
+                                        <input type="hidden", name="{{ item['id'] }}">
+                                        <button type="submit" class="btn btn-dark" name="deleteOrder">Удалить</button>
+                                    </form>
+                                    <form method="post" class="one-line" style="float: right; margin-right: 20px;">
+                                        <input type="hidden", name="{{ item['id'] }}">
+                                        <button type="submit" class="btn btn-warning" name="cancelOrder">Отменить</button>
+                                    </form>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                    <div class="tab-pane fade" id="list-users" role="tabpanel" aria-labelledby="users-list">
+                        {% if data['errors']['users'] %}
+                            <h3 class="data-lk-admin-error">{{ data['errors']['users'] }}</h3>
+                        {% endif %}
+                        {% for user in data['users'] %}
+                            <div class="card border-info mb-3 goods-card">
+                                <div class="card-header card-header-text"><b>№{{ user['id'] }}: <i>{{ user['name'] }} {{ user['surname'] }}</i></b></div>
+                                <div class="card-body">
+                                    <div class="one-line" style="padding-right: 50px;">
+                                        <p class="card-text">E-mail: {{ user['email'] }}</p>
+                                        <p class="card-text">Логин: {{ user['login'] }}</p>
+                                    </div>
+                                    <form method="post" class="one-line">
+                                        <input type="hidden" name="{{ user['id'] }}">
+                                        <button type="submit" class="btn btn-dark" name="deleteUser">Удалить</button>
+                                    </form>
+                                </div>
+                            </div>
+                        {% endfor %}
                     </div>
                 </div>
-            {% endfor %}
-        {% endif %}
+            </div>
+        </div>
     </div>
+    <br>
+    <br>
 {% endblock %}
