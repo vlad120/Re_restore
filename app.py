@@ -55,13 +55,15 @@ class OrderModel(db.Model):
     id = db.Column(db.Integer, unique=True, primary_key=True, autoincrement=True)
     total = db.Column(db.Float, nullable=False)
     goods = db.Column(db.JSON, nullable=False)
+    status = db.Column(db.String(10), default="processing")
     user_id = db.Column(db.Integer, db.ForeignKey('user_model.id'), nullable=False)
     user = db.relationship('UserModel', backref=db.backref('OrderModel'))
 
     def __repr__(self):
         return '<Order {} {}руб>'.format(self.id, self.total)
 
-    def to_dict(self, id_req=True, total_req=True, goods_req=False, user_req=True):
+    def to_dict(self, id_req=True, total_req=True, goods_req=True,
+                status_req=True, user_req=True):
         d = dict()
         if id_req:
             d['id'] = self.id
@@ -69,6 +71,8 @@ class OrderModel(db.Model):
             d['total'] = self.total
         if goods_req:
             d['goods'] = dict(self.goods)['goods']
+        if status_req:
+            d['status'] = self.status
         if user_req:
             d['user'] = self.user.to_dict(login_req=True)
         return d
@@ -113,27 +117,31 @@ class UserModel(db.Model):
 class DataTemplate:
     def get_data(self, tmp_a=None, base_req=False, main_req=False,
                  lk_req=False, lk_admin_req=False, reg_req=False):
-        data = dict()
-        if base_req:
-            data.update(self.get_base_data())
-        if main_req:
-            data.update(self.get_main_data())
-        if lk_req:
-            t = self.get_lk_data(tmp_a)
-            data['user'] = t['user']
-            data['errors'].update(t['errors'])
-        if lk_admin_req:
-            t = self.get_lk_admin_data(tmp_a)
-            data['errors'].update(t.pop('errors'))
-            data.update(t)
-        if reg_req:
-            t = self.get_registration_data()
-            data['last'].update(t['last'])
-            data['errors'].update(t['errors'])
-        return data
+        try:
+            data = dict()
+            if base_req:
+                data.update(self.get_base_data())
+            if main_req:
+                data.update(self.get_main_data())
+            if lk_req:
+                t = self.get_lk_data(tmp_a)
+                data['user'] = t['user']
+                data['errors'].update(t['errors'])
+            if lk_admin_req:
+                t = self.get_lk_admin_data(tmp_a)
+                data['errors'].update(t.pop('errors'))
+                data.update(t)
+            if reg_req:
+                t = self.get_registration_data()
+                data['last'].update(t['last'])
+                data['errors'].update(t['errors'])
+            return data
+        except Exception as e:
+            print("Data template get Error:\t", e)
+            return
 
     def get_base_data(self):
-        return {'menu_items': [{'name': 'tablets',
+        return {'menu_items': [{'name': 'Планшеты',
                                 'link': '#'},
                                {'name': 'Смартфоны',
                                 'link': '#'}],
@@ -170,8 +178,8 @@ class DataTemplate:
                            'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')}]
                 }
 
-    def get_lk_data(self, tmp_a=False):
-        response = userAPI.get((tmp_a if tmp_a else get_authorization())['id'])
+    def get_lk_data(self, tmp_a=None):
+        response = userAPI.get((tmp_a if tmp_a else get_authorization())['id'], a=tmp_a)
         if response['success']:
             return {'user': response['user'],
                     'errors': {'change_profile_info': {'name': None,
@@ -228,10 +236,10 @@ def verify_curr_admin(a=None):
     return False
 
 
-def verify_authorization(admin=False):
+def verify_authorization(admin=False, a=None):
     if admin and verify_curr_admin():
         return True
-    a = get_authorization()
+    a = a if a else get_authorization()
     try:
         user = UserModel.query.filter_by(id=a['id']).first()
         if user and a['login'] == user.login and \
@@ -356,13 +364,18 @@ class Authorization(Resource):
 
 
 class User(Resource):
-    def get(self, user_id):
+    def get(self, user_id, a=None):
         user = UserModel.query.filter_by(id=user_id).first()
+        # проверка на существование
         if not user:
-            return make_success(False)
+            return make_success(False, message="User doesn't exist")
+        # проверка на собственника учетной записи / админа
+        a = a if a else get_authorization()
+        if not (verify_curr_admin(a) or (a['id'] == user_id and verify_authorization(a=a))):
+            return make_success(False, message="Access Error")
         return make_success(user=user.to_dict(all_req=True))
 
-    def put(self, user_id, request_data=None):
+    def put(self, user_id, request_data=None, a=None):
         errors = {'name': None,
                   'surname': None,
                   'email': None,
@@ -378,6 +391,13 @@ class User(Resource):
                 args.update(request_data)
 
             user = UserModel.query.filter_by(id=user_id).first()
+            if not user:
+                return make_success(False, message="User doesn't exist")
+
+            # проверка на собственника учетной записи / админа
+            a = a if a else get_authorization()
+            if not (verify_curr_admin(a) or (a['id'] == user_id and verify_authorization(a=a))):
+                return make_success(False, message="Access Error")
 
             if 'photo' in args and args['photo']:
                 photo_name = None
@@ -437,31 +457,53 @@ class User(Resource):
             print("Change user info Error:\t", e)
             return make_success(False, 'Server error')
 
-    # def delete(self, user_id):
-    #     user_id = int(user_id)
-    #     if get_authorization()['id'] == ADMIN_ID:
-    #         exist = user_exist(user_id)
-    #         if not exist[0]:
-    #             return success(False, 'User not found')
-    #         try:
-    #             user = UserModel.query.filter_by(id=user_id).first()
-    #             db.session.delete(user)
-    #             db.session.commit()
-    #             return success()
-    #         except:
-    #             return success(False, 'Server error')
-    #     return success(False, 'Access error')
+    def delete(self, user_id, a=None):
+        # проверка на собственника учетной записи / админа
+        a = a if a else get_authorization()
+        if not (verify_curr_admin(a) or (a['id'] == user_id and verify_authorization(a=a))):
+            return make_success(False, message="Access Error")
+        try:
+            user = UserModel.query.filter_by(id=user_id).first()
+            if user:
+                # удаляем все заказы пользователя
+                for order in OrderModel.query.filter_by(user_id=user_id).all():
+                    db.session.delete(order)
+                db.session.delete(user)
+                db.session.commit()
+                return make_success()
+            return make_success(False, message="User doesn't exist")
+        except Exception as e:
+            print("User delete Error:\t", e)
+            return make_success(False, message="Server Error")
 
 
 class UserList(Resource):
     def get(self, tmp_a=None):
-        if verify_curr_admin(tmp_a):
-            try:
-                return make_success(users=[i.to_dict(name_req=True, surname_req=True,
-                                                     email_req=True, login_req=True) for i in UserModel.query.all()])
-            except:
-                return make_success(False, message='Server Error')
-        return make_success(False, message='Access Error')
+        if not verify_curr_admin(tmp_a):
+            return make_success(False, message='Access Error')
+        try:
+            return make_success(users=[i.to_dict(name_req=True, surname_req=True,
+                                                 email_req=True, login_req=True) for i in UserModel.query.all()])
+        except:
+            return make_success(False, message='Server Error')
+
+
+class Goods(Resource):
+    def delete(self, goods_id, a=None):
+        # проверка на админа
+        a = a if a else get_authorization()
+        if not verify_curr_admin(a):
+            return make_success(False, message="Access Error")
+        try:
+            goods = GoodsModel.query.filter_by(id=goods_id).first()
+            if goods:
+                db.session.delete(goods)
+                db.session.commit()
+                return make_success()
+            return make_success(False, message="Goods doesn't exist")
+        except Exception as e:
+            print("Goods delete Error:\t", e)
+            return make_success(False, message="Server Error")
 
 
 class GoodsList(Resource):
@@ -473,18 +515,59 @@ class GoodsList(Resource):
             return make_success(False, message='Server Error')
 
 
+class Order(Resource):
+    def delete(self, *args, a=None):
+        if not args[0].isdigit():
+            return make_success(False, message="Null request")
+        try:
+            order_id = int(args[0])
+            order = OrderModel.query.filter_by(id=order_id).first()
+            if order:
+                # проверка на собственника учетной записи / админа
+                a = a if a else get_authorization()
+                if not (verify_curr_admin(a) or (a['id'] == order.user_id and verify_authorization(a=a))):
+                    return make_success(False, message="Access Error")
+                db.session.delete(order)
+                db.session.commit()
+                return make_success()
+            return make_success(False, message="Order doesn't exist")
+        except Exception as e:
+            print("Order delete Error:\t", e)
+            return make_success(False, message="Server Error")
+
+    def put(self, *args, a=None):
+        if not args[0].isdigit() or len(args) < 2 or \
+                args[1] not in ('processing', 'cancel', 'done'):
+            return make_success(False, message="Bad request")
+        try:
+            order_id = int(args[0])
+            order = OrderModel.query.filter_by(id=order_id).first()
+            if order:
+                # проверка на админа
+                a = a if a else get_authorization()
+                if not verify_curr_admin(a):
+                    return make_success(False, message="Access Error")
+                order.status = args[1]
+                db.session.commit()
+                return make_success()
+            return make_success(False, message="Order doesn't exist")
+        except Exception as e:
+            print("Order put Error:\t", e)
+            return make_success(False, message="Server Error")
+
+
 class OrdersList(Resource):
     def get(self, tmp_a=None):
-        if verify_curr_admin(tmp_a):
-            try:
-                return make_success(orders=[i.to_dict(goods_req=True) for i in OrderModel.query.all()])
-            except Exception as e:
-                print(e)
-                return make_success(False, message='Server Error')
-        return make_success(False, message='Access Error')
+        if not verify_curr_admin(tmp_a):
+            return make_success(False, message='Access Error')
+        try:
+            return make_success(orders=[i.to_dict() for i in OrderModel.query.all()])
+        except Exception as e:
+            print(e)
+            return make_success(False, message='Server Error')
 
 
-def make_success(state=True, message='', **kwargs):
+def make_success(state=True, message='Ok', **kwargs):
     data = {'success': state if state else False}
     if message:
         data['message'] = message
@@ -533,8 +616,14 @@ def sign_in(page, t, data, ready_data=None):
     if response['success']:
         a = get_authorization(response['success'], request.form['login'], request.form['password'], img=True)
         if page in ('sign-up.html', 'lk.html'):
-            data = D.get_data(base_req=True, lk_req=True, tmp_a=a)
-            page = 'lk.html'
+            if verify_curr_admin(a):
+                data = D.get_data(base_req=True, lk_admin_req=True, tmp_a=a)
+                page = 'lk-admin.html'
+            else:
+                data = D.get_data(base_req=True, lk_req=True, tmp_a=a)
+                page = 'lk.html'
+        if not data:
+            return error()
         resp = make_response(render(page, a=a, title=t, data=data))
         resp.set_cookie('userID', str(a['id']))
         resp.set_cookie('userLogin', str(a['login']))
@@ -563,6 +652,8 @@ def sign_up():
 
     t = 'Регистрация'
     data = D.get_data(base_req=True, reg_req=True)
+    if not data:
+        return error()
 
     if request.method == "GET":
         return render('sign-up.html', t=t, data=data)
@@ -589,6 +680,8 @@ def lk():
         return redirect('/lk-admin')
     elif verify_authorization():
         data = D.get_data(base_req=True, lk_req=True)
+        if not data:
+            return error()
         if request.method == 'GET':
             return render("lk.html", title=t, data=data)
 
@@ -612,14 +705,43 @@ def lk_admin():
     t = "Личный кабинет (ADMIN)"
     if verify_curr_admin():
         data = D.get_data(base_req=True, lk_admin_req=True)
+        if not data:
+            return error()
+
         if request.method == 'GET':
             return render("lk-admin.html", title=t, data=data)
 
         form = get_request_data()
         if request.method == 'POST':
-            pass
+            err = dict()
+            if 'deleteGoods' in form:
+                resp = goodsAPI.delete(form['goodsID'])
+                if not resp['success']:
+                    err['goods'] = resp['message']
+            elif 'deleteOrder' in form:
+                resp = orderAPI.delete(form['orderID'])
+                if not resp['success']:
+                    err['orders'] = resp['message']
+            elif 'cancelOrder' in form:
+                resp = orderAPI.put(form['orderID'], 'cancel')
+                if not resp['success']:
+                    err['orders'] = resp['message']
+            elif 'doneOrder' in form:
+                resp = orderAPI.put(form['orderID'], 'done')
+                if not resp['success']:
+                    err['orders'] = resp['message']
+            elif 'deleteUser' in form:
+                resp = userAPI.delete(form['userID'])
+                if not resp['success']:
+                    err['users'] = resp['message']
+            data = D.get_data(base_req=True, lk_admin_req=True)
+            if not data:
+                return error()
+            if err:
+                data['errors']['get_data'].update(err)
+            return render("lk-admin.html", title=t, data=data)
     elif verify_authorization():
-        return redirect('/lk-admin')
+        return redirect('/lk')
     return redirect(HOME)
 
 
@@ -662,13 +784,17 @@ HOME = '/re_restore'
 HOST = '127.0.0.1'
 PORT = 8080
 
+# данные админа
 ADMIN_ID = -1
 ADMIN_LOGIN = "admin"
 ADMIN_PASSWORD = "admin"
 
+# Все API
 userAPI = User()
 user_listAPI = UserList()
+goodsAPI = Goods()
 goods_listAPI = GoodsList()
+orderAPI = Order()
 order_listAPI = OrdersList()
 authorizationAPI = Authorization()
 
@@ -683,8 +809,9 @@ if __name__ == '__main__':
     # db.session.commit()
     #
     # new_order = OrderModel(total=52000, user_id=1,
-    #                        goods={'goods': [{'goods': GoodsModel.query.filter_by(id=1).first().to_dict(full_link_req=True),
-    #                                          'count': 7}]})
+    #                        goods={'goods': [{'about': GoodsModel.query.filter_by(id=1).first().to_dict(full_link_req=True),
+    #                                          'count': 7}]},
+    #                        )
     # db.session.add(new_order)
     # db.session.commit()
 
@@ -692,6 +819,8 @@ if __name__ == '__main__':
     api.add_resource(UserList, '/users')
     api.add_resource(User, '/users/<int:user_id>')
     api.add_resource(GoodsList, '/goods')
-    api.add_resource(OrdersList, '/orders')
+    # api.add_resource(Goods, '/goods/<int:goods_id>')
+    api.add_resource(OrdersList, '/order')
+    api.add_resource(Order, '/order/<path:args>')
 
     app.run(port=PORT, host=HOST)

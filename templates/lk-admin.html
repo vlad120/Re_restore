@@ -34,6 +34,11 @@
             color: seagreen;
             text-decoration: none;
         }
+        .status {
+            float: right;
+            padding-right: 20px;
+            color: slateblue;
+        }
         .card-header-text:hover { text-decoration: none; }
         .btn-dark { float: right; }
         .one-line { display: inline-block; }
@@ -60,8 +65,8 @@
             <div class="col-8">
                 <div class="tab-content" id="nav-tabContent">
                     <div class="tab-pane fade show active" id="list-goods" role="tabpanel" aria-labelledby="goods-list">
-                        {% if data['errors']['goods'] %}
-                            <h3 class="data-lk-admin-error">{{ data['errors']['goods'] }}</h3>
+                        {% if data['errors']['get_data']['goods'] %}
+                            <h3 class="data-lk-admin-error">{{ data['errors']['get_data']['goods'] }}</h3>
                         {% endif %}
                         {% for item in data['goods'] %}
                             <div class="card border-info mb-3 goods-card">
@@ -69,7 +74,7 @@
                                 <div class="card-body">
                                     <p class="card-text">{{ item['short_description'] }}</p>
                                     <form method="post">
-                                        <input type="hidden" name="{{ item['id'] }}">
+                                        <input type="hidden" name="goodsID" value="{{ item['id'] }}">
                                         <button type="submit" class="btn btn-dark" name="deleteGoods">Удалить</button>
                                     </form>
                                 </div>
@@ -77,36 +82,57 @@
                         {% endfor %}
                     </div>
                     <div class="tab-pane fade" id="list-orders" role="tabpanel" aria-labelledby="orders-list">
-                        {% if data['errors']['orders'] %}
-                            <h3 class="data-lk-admin-error">{{ data['errors']['orders'] }}</h3>
+                        {% if data['errors']['get_data']['orders'] %}
+                            <h3 class="data-lk-admin-error">{{ data['errors']['get_data']['orders'] }}</h3>
                         {% endif %}
                         {% for item in data['orders'] %}
                             <div class="card border-info mb-3 goods-card">
-                                <div class="card-header card-header-text"><b>№{{ item['id'] }} от <i>{{ item['user']['login'] }}</i></b></div>
+                                <div class="card-header card-header-text">
+                                    <b>
+                                        <p class="one-line">№{{ item['id'] }} от <i>{{ item['user']['login'] }}</i></p>
+                                        <p class="one-line status">
+                                            {% if item['status'] == 'processing' %}
+                                                Выполняется
+                                            {% elif item['status'] == 'done' %}
+                                                Готов
+                                            {% elif item['status'] == 'cancel' %}
+                                                Отменён
+                                            {% else %}
+                                                Неизвестно!!!
+                                            {% endif %}
+                                        </p>
+                                    </b>
+                                </div>
                                 <div class="card-body">
                                     <ul class="list-group list-group-horizontal-sm">
-                                        {% for i in item['goods'] %}
-                                            <li class="list-group-item"><a href="{{ i['goods']['full_link'] }}">{{ i['goods']['id'] }}</a> - {{ i['goods']['price'] }}руб * {{ i['count']}}шт</li>
+                                        {% for g in item['goods'] %}
+                                            <li class="list-group-item"><a href="{{ g['about']['full_link'] }}">{{ g['about']['id'] }}</a> - {{ g['about']['price'] }}руб * {{ g['count']}}шт</li>
                                         {% endfor %}
 
                                     </ul>
                                     -------------------------------------
                                     <p class="card-text"><b>Итого:</b> {{ item['total'] }}руб</p>
-                                    <form method="post" class="one-line" style="float: right;">
-                                        <input type="hidden", name="{{ item['id'] }}">
+                                    <form method="post" class="one-line" style="float: right; margin-top: 5px;">
+                                        <input type="hidden" name="orderID" value="{{ item['id'] }}">
                                         <button type="submit" class="btn btn-dark" name="deleteOrder">Удалить</button>
                                     </form>
-                                    <form method="post" class="one-line" style="float: right; margin-right: 20px;">
-                                        <input type="hidden", name="{{ item['id'] }}">
-                                        <button type="submit" class="btn btn-warning" name="cancelOrder">Отменить</button>
-                                    </form>
+                                    {% if item['status'] == 'processing' %}
+                                        <form method="post" class="one-line" style="float: right; margin-right: 20px; margin-top: 5px;">
+                                            <input type="hidden" name="orderID" value="{{ item['id'] }}">
+                                            <button type="submit" class="btn btn-warning" name="cancelOrder">Отменить</button>
+                                        </form>
+                                        <form method="post" class="one-line" style="float: right; margin-right: 20px; margin-top: 5px;">
+                                            <input type="hidden" name="orderID" value="{{ item['id'] }}">
+                                            <button type="submit" class="btn btn-success" name="doneOrder">Готово</button>
+                                        </form>
+                                    {% endif %}
                                 </div>
                             </div>
                         {% endfor %}
                     </div>
                     <div class="tab-pane fade" id="list-users" role="tabpanel" aria-labelledby="users-list">
-                        {% if data['errors']['users'] %}
-                            <h3 class="data-lk-admin-error">{{ data['errors']['users'] }}</h3>
+                        {% if data['errors']['get_data']['users'] %}
+                            <h3 class="data-lk-admin-error">{{ data['errors']['get_data']['users'] }}</h3>
                         {% endif %}
                         {% for user in data['users'] %}
                             <div class="card border-info mb-3 goods-card">
@@ -117,7 +143,7 @@
                                         <p class="card-text">Логин: {{ user['login'] }}</p>
                                     </div>
                                     <form method="post" class="one-line">
-                                        <input type="hidden" name="{{ user['id'] }}">
+                                        <input type="hidden" name="userID" value="{{ user['id'] }}">
                                         <button type="submit" class="btn btn-dark" name="deleteUser">Удалить</button>
                                     </form>
                                 </div>
