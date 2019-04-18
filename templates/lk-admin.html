@@ -39,6 +39,16 @@
             padding-right: 20px;
             color: slateblue;
         }
+        .add-goods-error {
+            margin-left: 70px;
+            font-size: 14px;
+            color: orangered;
+            margin-bottom: 5px;
+        }
+        .form-fields {
+            padding-right: 16px;
+            border-bottom: 0;
+        }
         .card-header-text:hover { text-decoration: none; }
         .btn-dark { float: right; }
         .one-line { display: inline-block; }
@@ -60,11 +70,12 @@
                     <a class="list-group-item list-group-item-action active" id="goods-list" data-toggle="list" href="#list-goods" role="tab" name="getAllGoods">Товары</a>
                     <a class="list-group-item list-group-item-action" id="orders-list" data-toggle="list" href="#list-orders" role="tab" name="getAllOrders">Заказы</a>
                     <a class="list-group-item list-group-item-action" id="users-list" data-toggle="list" href="#list-users" role="tab" name="getAllUsers">Пользователи</a>
+                    <a class="list-group-item list-group-item-action" id="add-goods-list" data-toggle="list" href="#list-add-goods" role="tab" name="addGoods">Добавить товар</a>
                 </div>
             </div>
             <div class="col-8">
                 <div class="tab-content" id="nav-tabContent">
-                    <div class="tab-pane fade show active" id="list-goods" role="tabpanel" aria-labelledby="goods-list">
+                    <div class="tab-pane fade {% if data['curr_category'] == 'goods' %}show active{% endif %}" id="list-goods" role="tabpanel" aria-labelledby="goods-list">
                         {% if data['errors']['get_data']['goods'] %}
                             <h3 class="data-lk-admin-error">{{ data['errors']['get_data']['goods'] }}</h3>
                         {% endif %}
@@ -75,13 +86,13 @@
                                     <p class="card-text">{{ item['short_description'] }}</p>
                                     <form method="post">
                                         <input type="hidden" name="goodsID" value="{{ item['id'] }}">
-                                        <button type="submit" class="btn btn-dark" name="deleteGoods">Удалить</button>
+                                        <button type="submit" class="btn btn-dark" name="deleteGoodsBtn">Удалить</button>
                                     </form>
                                 </div>
                             </div>
                         {% endfor %}
                     </div>
-                    <div class="tab-pane fade" id="list-orders" role="tabpanel" aria-labelledby="orders-list">
+                    <div class="tab-pane fade {% if data['curr_category'] == 'orders' %}show active{% endif %}" id="list-orders" role="tabpanel" aria-labelledby="orders-list">
                         {% if data['errors']['get_data']['orders'] %}
                             <h3 class="data-lk-admin-error">{{ data['errors']['get_data']['orders'] }}</h3>
                         {% endif %}
@@ -114,23 +125,23 @@
                                     <p class="card-text"><b>Итого:</b> {{ item['total'] }}руб</p>
                                     <form method="post" class="one-line" style="float: right; margin-top: 5px;">
                                         <input type="hidden" name="orderID" value="{{ item['id'] }}">
-                                        <button type="submit" class="btn btn-dark" name="deleteOrder">Удалить</button>
+                                        <button type="submit" class="btn btn-dark" name="deleteOrderBtn">Удалить</button>
                                     </form>
                                     {% if item['status'] == 'processing' %}
                                         <form method="post" class="one-line" style="float: right; margin-right: 20px; margin-top: 5px;">
                                             <input type="hidden" name="orderID" value="{{ item['id'] }}">
-                                            <button type="submit" class="btn btn-warning" name="cancelOrder">Отменить</button>
+                                            <button type="submit" class="btn btn-warning" name="cancelOrderBtn">Отменить</button>
                                         </form>
                                         <form method="post" class="one-line" style="float: right; margin-right: 20px; margin-top: 5px;">
                                             <input type="hidden" name="orderID" value="{{ item['id'] }}">
-                                            <button type="submit" class="btn btn-success" name="doneOrder">Готово</button>
+                                            <button type="submit" class="btn btn-success" name="doneOrderBtn">Готово</button>
                                         </form>
                                     {% endif %}
                                 </div>
                             </div>
                         {% endfor %}
                     </div>
-                    <div class="tab-pane fade" id="list-users" role="tabpanel" aria-labelledby="users-list">
+                    <div class="tab-pane fade {% if data['curr_category'] == 'users' %}show active{% endif %}" id="list-users" role="tabpanel" aria-labelledby="users-list">
                         {% if data['errors']['get_data']['users'] %}
                             <h3 class="data-lk-admin-error">{{ data['errors']['get_data']['users'] }}</h3>
                         {% endif %}
@@ -144,16 +155,88 @@
                                     </div>
                                     <form method="post" class="one-line">
                                         <input type="hidden" name="userID" value="{{ user['id'] }}">
-                                        <button type="submit" class="btn btn-dark" name="deleteUser">Удалить</button>
+                                        <button type="submit" class="btn btn-dark" name="deleteUserBtn">Удалить</button>
                                     </form>
                                 </div>
                             </div>
                         {% endfor %}
                     </div>
+                    <div class="tab-pane fade {% if data['curr_category'] == 'addGoods' %}show active{% endif %}" id="list-add-goods" role="tabpanel" aria-labelledby="add-goods-list">
+                        <form method="post">
+                            <p>
+                                <div class="input-group mb-3 form-fields">
+                                    <div class="input-group-prepend">
+                                        <span class="input-group-text">#</span>
+                                    </div>
+                                    <input type="text" class="form-control" name="name" placeholder="Название" value="{{ data['last']['add_goods']['name'] }}">
+                                </div>
+                                {% if data['errors']['add_goods']['name'] %}
+                                    <p class="add-goods-error">{{ data['errors']['add_goods']['name'] }}</p>
+                                {% endif %}
+                            </p>
+                            <p>
+                                <div class="input-group form-fields">
+                                    <div class="input-group-prepend">
+                                        <span class="input-group-text">§</span>
+                                    </div>
+                                    <textarea type="text" class="form-control" name="short_description" placeholder="Краткое описание">{{ data['last']['add_goods']['short_description'] }}</textarea>
+                                </div>
+                                {% if data['errors']['add_goods']['short_description'] %}
+                                    <p class="add-goods-error" style="margin-top: 15px;">{{ data['errors']['add_goods']['short_description'] }}</p>
+                                {% endif %}
+                            </p>
+                            <p>
+                                <div class="input-group mb-3 form-fields">
+                                    <div class="input-group-prepend">
+                                        <span class="input-group-text">%</span>
+                                    </div>
+                                    <textarea type="text" class="form-control" name="description" placeholder="Полное описание">{{ data['last']['add_goods']['description'] }}</textarea>
+                                </div>
+                                {% if data['errors']['add_goods']['description'] %}
+                                    <p class="add-goods-error" style="margin-top: 15px;">{{ data['errors']['add_goods']['description'] }}</p>
+                                {% endif %}
+                            </p>
+                            <p>
+                                <div class="input-group mb-3 form-fields">
+                                    <div class="input-group-prepend">
+                                        <span class="input-group-text">$</span>
+                                    </div>
+                                    <input type="number" class="form-control" name="price" placeholder="Цена" value="{{ data['last']['add_goods']['price'] }}">
+                                </div>
+                                {% if data['errors']['add_goods']['price'] %}
+                                    <p class="add-goods-error">{{ data['errors']['add_goods']['price'] }}</p>
+                                {% endif %}
+                            </p>
+                            <p>
+                                <div class="input-group mb-3 form-fields">
+                                    <div class="input-group-prepend">
+                                        <span class="input-group-text">n</span>
+                                    </div>
+                                    <input type="number" class="form-control" name="count" placeholder="Количество" value="{{ data['last']['add_goods']['count'] }}">
+                                </div>
+                                {% if data['errors']['add_goods']['count'] %}
+                                    <p class="add-goods-error">{{ data['errors']['add_goods']['count'] }}</p>
+                                {% endif %}
+                            </p>
+                            <p>
+                                <div class="input-group mb-3 form-fields">
+                                    <div class="input-group-prepend">
+                                        <span class="input-group-text">/</span>
+                                    </div>
+                                    <input type="text" class="form-control" name="category" placeholder="Категория" value="{{ data['last']['add_goods']['category'] }}">
+                                </div>
+                                {% if data['errors']['add_goods']['category'] %}
+                                    <p class="add-goods-error">{{ data['errors']['add_goods']['category'] }}</p>
+                                {% endif %}
+                            </p>
+                            <p>
+                                <button type="submit" class="btn btn-info" name="addGoodsBtn">Готово</button>
+                            </p>
+                        </form>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-    <br>
-    <br>
+    <br><br>
 {% endblock %}

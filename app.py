@@ -15,12 +15,12 @@ db = SQLAlchemy(app)
 
 class GoodsModel(db.Model):
     id = db.Column(db.Integer, unique=True, primary_key=True, autoincrement=True)
-    name = db.Column(db.String(70), nullable=False)
+    name = db.Column(db.String(80), nullable=False)
     description = db.Column(db.String(2000), nullable=False)
     short_description = db.Column(db.String(200), nullable=False)
     price = db.Column(db.Float, nullable=False)
     count = db.Column(db.Integer, nullable=False)
-    category = db.Column(db.String(100), nullable=False)
+    category = db.Column(db.String(150), nullable=False)
     photos = db.Column(db.String(500))
 
     def __repr__(self):
@@ -49,6 +49,13 @@ class GoodsModel(db.Model):
         if photos_req:
             d['photos'] = [photo.strip() for photo in self.photos.split(';')]
         return d
+
+
+class CategoryModel(db.Model):
+    name = db.Column(db.String(150), unique=True, primary_key=True)
+
+    def __repr__(self):
+        return '<Category {}>'.format(self.name)
 
 
 class OrderModel(db.Model):
@@ -117,8 +124,8 @@ class UserModel(db.Model):
 class DataTemplate:
     def get_data(self, tmp_a=None, base_req=False, main_req=False,
                  lk_req=False, lk_admin_req=False, reg_req=False):
+        data = dict()
         try:
-            data = dict()
             if base_req:
                 data.update(self.get_base_data())
             if main_req:
@@ -194,13 +201,21 @@ class DataTemplate:
         goods_response = goods_listAPI.get()
         orders_response = order_listAPI.get(tmp_a)
         users_response = user_listAPI.get(tmp_a)
-        return {'goods': goods_response['goods'] if goods_response['success'] else [],
+        data = {'curr_category': 'goods',
+                'goods': goods_response['goods'] if goods_response['success'] else [],
                 'orders': orders_response['orders'] if orders_response['success'] else [],
                 'users': users_response['users'] if users_response['success'] else [],
                 'errors': {'get_data': {'goods': None if goods_response['success'] else goods_response['message'],
                                         'orders': None if orders_response['success'] else orders_response['message'],
-                                        'users': None if users_response['success'] else users_response['message']}}
+                                        'users': None if users_response['success'] else users_response['message']},
+                           'add_goods': {}},
+                'last': {'add_goods': {}}
                 }
+        for i in ['name', 'description', 'short_description',
+                  'price', 'count', 'category']:
+            data['errors']['add_goods'][i] = None
+            data['last']['add_goods'][i] = ''
+        return data
 
     def get_sign_in_data(self):
         pass
@@ -304,7 +319,7 @@ class Authorization(Resource):
 
         try:
             if get_authorization()['id']:
-                return make_success(False)
+                return make_success(False, message="Access error")
 
             parser = reqparse.RequestParser()
             for arg in all_fields + ['subscription']:
@@ -325,7 +340,7 @@ class Authorization(Resource):
                 else:
                     args[field] = args[field].strip()
             if any(val for val in errors.values()):
-                return make_success(False, errors=errors)
+                return make_success(False, message="Empty fields", errors=errors)
 
             # на занятый логин
             if (login == ADMIN_LOGIN or
@@ -360,7 +375,7 @@ class Authorization(Resource):
         except Exception as e:
             print("Registration (API) Error:\t", e)
             errors['other'] = "Ошибка сервера."
-            return make_success(False, errors=errors)
+            return make_success(False, message="Server error", errors=errors)
 
 
 class User(Resource):
@@ -402,16 +417,16 @@ class User(Resource):
             if 'photo' in args and args['photo']:
                 photo_name = None
                 try:
-                    ext = args['photo'].filename.split('.')[-1]
+                    ext = args['photo'][0].filename.split('.')[-1]
                     if ext.lower() in ['png', 'jpg', 'jpeg']:
                         photo_name = '{}.{}'.format(user.id, 'png')
-                        args['photo'].save('static/profiles/' + photo_name)
+                        args['photo'][0].save('static/profiles/' + photo_name)
                         user.photo = photo_name
                         db.session.commit()
                     else:
                         raise TypeError
                 except Exception as e:
-                    print("Save photo during changing user info Error:\t", e)
+                    print("Save photo (change user info) Error:\t", e)
                     if photo_name:
                         remove(photo_name)
                         errors['photo'] = "Ошибка при загрузке фото."
@@ -489,6 +504,32 @@ class UserList(Resource):
 
 
 class Goods(Resource):
+    def get(self):
+        pass
+
+    def put(self):
+        # photos = []
+        # if args['photos']:
+        #     for i in range(len(args['photos'])):
+        #         photo_name = None
+        #         try:
+        #             ext = args['photos'][i].filename.split('.')[-1]
+        #             if ext.lower() in ['png', 'jpg', 'jpeg']:
+        #                 photo_name = '{}.{}'.format(i, 'png')
+        #                 args['photos'][i].save('static/goods/{}/{}/{}'.format(args['category'],
+        #                                                                       args['name'],
+        #                                                                       photo_name))
+        #                 photos.append(photo_name)
+        #             else:
+        #                 raise TypeError
+        #         except Exception as e:
+        #             print("Save photos (add goods) Error:\t", e)
+        #             if photo_name:
+        #                 remove(photo_name)
+        #                 errors['photos'] = "Ошибка при загрузке фото."
+        # args['photos'] = ";".join(photos)
+        pass
+
     def delete(self, goods_id, a=None):
         # проверка на админа
         a = a if a else get_authorization()
@@ -513,6 +554,73 @@ class GoodsList(Resource):
         except Exception as e:
             print(e)
             return make_success(False, message='Server Error')
+
+    def post(self, request_data=None):
+        all_fields = ['name', 'description', 'short_description',
+                      'price', 'count', 'category']
+        errors = dict()
+        for field in all_fields:
+            errors[field] = None
+
+        try:
+            if not verify_curr_admin():
+                return make_success(False, message="Access error")
+
+            parser = reqparse.RequestParser()
+            for arg in all_fields:
+                parser.add_argument(arg)
+            args = dict(parser.parse_args())
+            if request_data:
+                for i in request_data:
+                    if i in args:
+                        args[i] = request_data[i].strip() if type(request_data[i]) is str else request_data[i]
+
+            # проверка на пустоту
+            err = False
+            for field in all_fields:
+                if not args[field]:
+                    errors[field] = 'Поле должно быть заполнено.'
+                    err = True
+            if err:
+                return make_success(False, message="Empty fields", errors=errors)
+
+            args['category'].strip('/')
+
+            # длина полей (для базы данных)
+            if len(args['name']) > 80:
+                errors['name'] = "Название должно быть не более 80 символов."
+            if len(args['description']) > 2000:
+                errors['description'] = "Описание должно быть не более 2000 символов."
+            if len(args['short_description']) > 200:
+                errors['short_description'] = "Краткое описание должно быть не более 200 символов."
+            if len(args['category']) > 150:
+                errors['category'] = "Категория не должна превышать 150 символов."
+
+            if any(err for err in errors.values()):
+                return make_success(False, message="Too much data", errors=errors)
+
+            if not CategoryModel.query.filter_by(name=args['category']).first():
+                c = CategoryModel(name=args['category'])
+                db.session.add(c)
+
+            # правильный формат количества и цены
+            err = False
+            for val_type, field in ((int, 'count'), (float, 'price')):
+                try:
+                    args[field] = val_type(args[field])
+                except ValueError:
+                    errors[field] = "Неверный формат."
+                    err = True
+            if err:
+                return make_success(False, message="Type Error", errors=errors)
+
+            goods = GoodsModel(**args)
+            db.session.add(goods)
+            db.session.commit()
+            return make_success(goods.id, errors=errors)
+        except Exception as e:
+            print("Add goods (API) Error:\t", e)
+            return make_success(False, message="Server error", errors=errors)
 
 
 class Order(Resource):
@@ -580,7 +688,7 @@ def get_request_data(files=False):
     if files:
         form.update(dict(request.files))
     for i in form:
-        if type(form[i]) is list:
+        if type(form[i]) is list and i not in ['photo', 'photos']:
             form[i] = form[i][-1]
     return form
 
@@ -600,12 +708,12 @@ def re_restore():
 
 @app.route('/re_restore/<string:category>')
 def category(category):
-    return render('/goods-category')
+    return render('/')
 
 
 @app.route('/re_restore/<string:category>/<int:goods_id>')
 def goods(category, goods_id):
-    return render('/goods')
+    return render('/')
 
 
 def sign_in(page, t, data, ready_data=None):
@@ -682,21 +790,18 @@ def lk():
         data = D.get_data(base_req=True, lk_req=True)
         if not data:
             return error()
-        if request.method == 'GET':
-            return render("lk.html", title=t, data=data)
 
         if request.method == 'POST':
             if 'changeUserInfoBtn' in request.form:
                 response = userAPI.put(get_authorization()['id'], request_data=get_request_data())
                 data = D.get_data(base_req=True, lk_req=True)
                 data['errors']['change_profile_info'].update(response['errors'])
-                return render("lk.html", title=t, data=data)
             elif 'photo' in request.files:
                 response = userAPI.put(get_authorization()['id'], request_data=get_request_data(files=True))
                 data = D.get_data(base_req=True, lk_req=True)
                 data['errors']['change_profile_info'].update(response['errors'])
-                return render("lk.html", title=t, data=data)
-            return server_error()
+
+        return render("lk.html", title=t, data=data)
     return redirect(HOME)
 
 
@@ -707,38 +812,56 @@ def lk_admin():
         data = D.get_data(base_req=True, lk_admin_req=True)
         if not data:
             return error()
+        category = data['curr_category']
 
         if request.method == 'GET':
             return render("lk-admin.html", title=t, data=data)
 
         form = get_request_data()
         if request.method == 'POST':
-            err = dict()
-            if 'deleteGoods' in form:
+            err = {'add_data': {},
+                   'add_goods': {}}
+            last = dict()
+            if 'addGoodsBtn' in form:
+                category = 'goods'
+                response = goods_listAPI.post(request_data=form)
+                if not response['success']:
+                    err['add_goods'] = response['errors']
+                    last['add_goods'] = form
+                    category = 'addGoods'
+            elif 'deleteGoodsBtn' in form:
+                category = 'goods'
                 resp = goodsAPI.delete(form['goodsID'])
                 if not resp['success']:
-                    err['goods'] = resp['message']
-            elif 'deleteOrder' in form:
+                    err['add_data']['goods'] = resp['message']
+            elif 'deleteOrderBtn' in form:
+                category = 'orders'
                 resp = orderAPI.delete(form['orderID'])
                 if not resp['success']:
-                    err['orders'] = resp['message']
-            elif 'cancelOrder' in form:
+                    err['add_data']['orders'] = resp['message']
+            elif 'cancelOrderBtn' in form:
+                category = 'orders'
                 resp = orderAPI.put(form['orderID'], 'cancel')
                 if not resp['success']:
-                    err['orders'] = resp['message']
-            elif 'doneOrder' in form:
+                    err['add_data']['orders'] = resp['message']
+            elif 'doneOrderBtn' in form:
+                category = 'orders'
                 resp = orderAPI.put(form['orderID'], 'done')
                 if not resp['success']:
-                    err['orders'] = resp['message']
-            elif 'deleteUser' in form:
+                    err['add_data']['orders'] = resp['message']
+            elif 'deleteUserBtn' in form:
+                category = 'users'
                 resp = userAPI.delete(form['userID'])
                 if not resp['success']:
-                    err['users'] = resp['message']
+                    err['add_data']['users'] = resp['message']
             data = D.get_data(base_req=True, lk_admin_req=True)
             if not data:
                 return error()
             if err:
-                data['errors']['get_data'].update(err)
+                data['errors'].update(err)
+            if last:
+                data['last'].update(last)
+            data['curr_category'] = category
             return render("lk-admin.html", title=t, data=data)
     elif verify_authorization():
         return redirect('/lk')
@@ -813,6 +936,10 @@ if __name__ == '__main__':
     #                                          'count': 7}]},
     #                        )
     # db.session.add(new_order)
+    # db.session.commit()
+
+    # category = CategoryModel(name="tablets")
+    # db.session.add(category)
     # db.session.commit()
 
     api.add_resource(Authorization, '/authorization')
