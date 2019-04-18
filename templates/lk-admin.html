@@ -32,7 +32,6 @@
         .card-header-text {
             font-size: 18px;
             color: seagreen;
-            text-decoration: none;
         }
         .status {
             float: right;
@@ -67,10 +66,10 @@
         <div class="row">
             <div class="col-4">
                 <div class="list-group sections" id="list-tab" role="tablist">
-                    <a class="list-group-item list-group-item-action active" id="goods-list" data-toggle="list" href="#list-goods" role="tab" name="getAllGoods">Товары</a>
-                    <a class="list-group-item list-group-item-action" id="orders-list" data-toggle="list" href="#list-orders" role="tab" name="getAllOrders">Заказы</a>
-                    <a class="list-group-item list-group-item-action" id="users-list" data-toggle="list" href="#list-users" role="tab" name="getAllUsers">Пользователи</a>
-                    <a class="list-group-item list-group-item-action" id="add-goods-list" data-toggle="list" href="#list-add-goods" role="tab" name="addGoods">Добавить товар</a>
+                    <a class="list-group-item list-group-item-action {% if data['curr_category'] == 'goods' %}active{% endif %}" id="goods-list" data-toggle="list" href="#list-goods" role="tab" name="getAllGoods">Товары</a>
+                    <a class="list-group-item list-group-item-action {% if data['curr_category'] == 'orders' %}active{% endif %}" id="orders-list" data-toggle="list" href="#list-orders" role="tab" name="getAllOrders">Заказы</a>
+                    <a class="list-group-item list-group-item-action {% if data['curr_category'] == 'users' %}active{% endif %}" id="users-list" data-toggle="list" href="#list-users" role="tab" name="getAllUsers">Пользователи</a>
+                    <a class="list-group-item list-group-item-action {% if data['curr_category'] == 'addGoods' %}active{% endif %}" id="add-goods-list" data-toggle="list" href="#list-add-goods" role="tab" name="addGoods">Добавить товар</a>
                 </div>
             </div>
             <div class="col-8">

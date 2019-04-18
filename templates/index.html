@@ -16,6 +16,7 @@
             width: auto;
             margin-top: 20px;
         }
+        .goods-title:hover { text-decoration: none; }
     </style>
 {% endblock %}
 
@@ -48,12 +49,12 @@
     <div style="min-width: 750px;">
         {% for item in data['goods'] %}
             <div class="card content one-line" style="width: 300px;">
-              <p style="text-align: center; margin-bottom: 0;"><img src="{{ item['image'] }}" class="card-img-top" alt="Упс..."></p>
-              <div class="card-body">
-                <h5 class="card-title">{{ item['name'] }}</h5>
-                <p class="card-text">{{ item['short_description'] }}</p>
-                <a href="#" class="btn btn-primary">Подробнее</a>
-              </div>
+                <p style="text-align: center; margin-bottom: 0;"><img src="{{ item['photo'] }}" class="card-img-top" alt="Упс..."></p>
+                <div class="card-body">
+                    <h5 class="card-title"><a href="{{ item['full_link'] }}" class="goods-title">{{ item['name'] }}</a></h5>
+                    <p class="card-text">{{ item['short_description'] }}</p>
+                    <a href="{{ item['full_link'] }}" class="btn btn-primary">Подробнее</a>
+                </div>
             </div>
         {% endfor %}
     </div>

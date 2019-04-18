@@ -1,4 +1,4 @@
-from flask import Flask, render_template, redirect, request, make_response, url_for
+from flask import Flask, render_template, redirect, request, make_response
 from flask_restful import reqparse, Api, Resource
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -16,19 +16,19 @@ db = SQLAlchemy(app)
 class GoodsModel(db.Model):
     id = db.Column(db.Integer, unique=True, primary_key=True, autoincrement=True)
     name = db.Column(db.String(80), nullable=False)
-    description = db.Column(db.String(2000), nullable=False)
-    short_description = db.Column(db.String(200), nullable=False)
-    price = db.Column(db.Float, nullable=False)
+    description = db.Column(db.String(15000), nullable=False)
+    short_description = db.Column(db.String(120), nullable=False)
+    price = db.Column(db.Integer, nullable=False)
     count = db.Column(db.Integer, nullable=False)
     category = db.Column(db.String(150), nullable=False)
-    photos = db.Column(db.String(500))
+    photos = db.Column(db.String(500), default='/static/goods/NoPhoto.jpg')
 
     def __repr__(self):
-        return '<Goods {} {} {}руб {}шт>'.format(self.id, self.name, self.price, self.count)
+        return '<GoodsModel {} {} {}руб {}шт>'.format(self.id, self.name, self.price, self.count)
 
     def to_dict(self, id_req=True, name_req=True, description_req=False,
                 short_description_req=True, price_req=True, count_req=False,
-                category_req=True, full_link_req=False, photos_req=False):
+                category_req=True, full_link_req=False, photo_req=False, photos_req=False):
         d = dict()
         if id_req:
             d['id'] = self.id
@@ -46,8 +46,11 @@ class GoodsModel(db.Model):
             d['category'] = self.category
         if full_link_req:
             d['full_link'] = '{}/{}/{}'.format(HOME, self.category.strip('/'), self.id)
+        if photo_req:
+            d['photo'] = self.photos.split(';')[0].strip()
         if photos_req:
             d['photos'] = [photo.strip() for photo in self.photos.split(';')]
+            d['len_photos'] = len(self.photos.split(';'))
         return d
 
 
@@ -55,7 +58,7 @@ class CategoryModel(db.Model):
     name = db.Column(db.String(150), unique=True, primary_key=True)
 
     def __repr__(self):
-        return '<Category {}>'.format(self.name)
+        return '<CategoryModel {}>'.format(self.name)
 
 
 class OrderModel(db.Model):
@@ -67,7 +70,7 @@ class OrderModel(db.Model):
     user = db.relationship('UserModel', backref=db.backref('OrderModel'))
 
     def __repr__(self):
-        return '<Order {} {}руб>'.format(self.id, self.total)
+        return '<OrderModel {} {}руб>'.format(self.id, self.total)
 
     def to_dict(self, id_req=True, total_req=True, goods_req=True,
                 status_req=True, user_req=True):
@@ -96,7 +99,7 @@ class UserModel(db.Model):
     photo = db.Column(db.String(100), default="NoPhoto.jpg")
 
     def __repr__(self):
-        return '<User {} {} {} {}>'.format(self.id, self.login, self.name, self.surname)
+        return '<UserModel {} {} {} {}>'.format(self.id, self.login, self.name, self.surname)
 
     def to_dict(self, id_req=True, name_req=False, surname_req=False,
                 email_req=False, login_req=False, photo_req=False,
@@ -161,28 +164,16 @@ class DataTemplate:
                 }
 
     def get_main_data(self):
-        return {'slides': [url_for('static', filename='main_banners/{}.png'.format(i + 1)) for i in range(4)],
+        interesting_goods = 10
+        # множество товаров (которые есть в наличии)
+        goods = set(filter(lambda g: g.count > 0, (i for i in GoodsModel.query.all())))
+        # обрезка до нужного количества
+        goods = goods if len(goods) <= interesting_goods else goods[:interesting_goods]
+        # пребразование товаров в формат словаря
+        goods = list(g.to_dict(photo_req=True, full_link_req=True) for g in goods)
+        return {'slides': ['static/main_banners/{}.png'.format(i + 1) for i in range(4)],
                 'len_slides': 4,
-                'goods': [{'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
-                           'short-description': 'Уникальный планшет, который вы должны купить',
-                           'price': 25000,
-                           'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')},
-                          {'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
-                           'short-description': 'Уникальный планшет, который вы должны купить',
-                           'price': 25000,
-                           'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')},
-                          {'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
-                           'short-description': 'Уникальный планшет, который вы должны купить',
-                           'price': 25000,
-                           'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')},
-                          {'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
-                           'short-description': 'Уникальный планшет, который вы должны купить',
-                           'price': 25000,
-                           'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')},
-                          {'name': 'iPad 2017, 32GB, Wi-Fi only, Silver',
-                           'short-description': 'Уникальный планшет, который вы должны купить',
-                           'price': 25000,
-                           'image': url_for('static', filename='goods/tablets/ipad_2017/1.png')}]
+                'goods': goods
                 }
 
     def get_lk_data(self, tmp_a=None):
@@ -217,9 +208,6 @@ class DataTemplate:
             data['last']['add_goods'][i] = ''
         return data
 
-    def get_sign_in_data(self):
-        pass
-
     def get_registration_data(self):
         data = {'errors': {'registration': {}},
                 'last': {'registration': {}}
@@ -239,7 +227,7 @@ def get_authorization(tmp_id=None, tmp_login=None, tmp_password=None, img=False)
         if user:
             a.update(user.to_dict(photo_req=True))
         else:
-            a['photo'] = 'static/profiles/NoPhoto.jpg'
+            a['photo'] = '/static/profiles/NoPhoto.jpg'
     return a
 
 
@@ -503,11 +491,16 @@ class UserList(Resource):
             return make_success(False, message='Server Error')
 
 
-class Goods(Resource):
-    def get(self):
-        pass
+class Gooods(Resource):
+    def get(self, goods_id):
+        goods = GoodsModel.query.filter_by(id=goods_id).first()
+        if not goods:
+            return make_success(False, message="Goods doesn't exist")
+        return make_success(data={'goods': goods.to_dict(description_req=True,
+                                                         photos_req=True,
+                                                         count_req=True)})
 
-    def put(self):
+    def put(self, goods_id):
         # photos = []
         # if args['photos']:
         #     for i in range(len(args['photos'])):
@@ -528,7 +521,7 @@ class Goods(Resource):
         #                 remove(photo_name)
         #                 errors['photos'] = "Ошибка при загрузке фото."
         # args['photos'] = ";".join(photos)
-        pass
+        return make_success()
 
     def delete(self, goods_id, a=None):
         # проверка на админа
@@ -591,8 +584,8 @@ class GoodsList(Resource):
                 errors['name'] = "Название должно быть не более 80 символов."
             if len(args['description']) > 2000:
                 errors['description'] = "Описание должно быть не более 2000 символов."
-            if len(args['short_description']) > 200:
-                errors['short_description'] = "Краткое описание должно быть не более 200 символов."
+            if len(args['short_description']) > 120:
+                errors['short_description'] = "Краткое описание должно быть не более 120 символов."
             if len(args['category']) > 150:
                 errors['category'] = "Категория не должна превышать 150 символов."
 
@@ -605,7 +598,7 @@ class GoodsList(Resource):
 
             # правильный формат количества и цены
             err = False
-            for val_type, field in ((int, 'count'), (float, 'price')):
+            for val_type, field in ((int, 'count'), (int, 'price')):
                 try:
                     args[field] = val_type(args[field])
                 except ValueError:
@@ -711,9 +704,27 @@ def category(category):
     return render('/')
 
 
-@app.route('/re_restore/<string:category>/<int:goods_id>')
+@app.route('/re_restore/<string:category>/<int:goods_id>', methods=["GET", "POST"])
 def goods(category, goods_id):
-    return render('/')
+    data = D.get_data(base_req=True)
+    if not data:
+        return server_error()
+
+    api_response = goodsAPI.get(goods_id)
+    if not api_response['success']:
+        return error(message=api_response['message'])
+    data.update(api_response['data'])
+
+    t = api_response['data']['goods']['name']
+    curr_admin = verify_curr_admin()
+
+    if request.method == "GET":
+        if curr_admin:
+            return render('goods-admin.html', title=t, data=data)
+        return render('goods.html', title=t, data=data)
+    if request.method == "POST":
+        if 'sign-in' in request.form:
+            return sign_in('goods.html', t, data)
 
 
 def sign_in(page, t, data, ready_data=None):
@@ -761,7 +772,7 @@ def sign_up():
     t = 'Регистрация'
     data = D.get_data(base_req=True, reg_req=True)
     if not data:
-        return error()
+        return server_error()
 
     if request.method == "GET":
         return render('sign-up.html', t=t, data=data)
@@ -789,7 +800,7 @@ def lk():
     elif verify_authorization():
         data = D.get_data(base_req=True, lk_req=True)
         if not data:
-            return error()
+            return server_error()
 
         if request.method == 'POST':
             if 'changeUserInfoBtn' in request.form:
@@ -811,7 +822,7 @@ def lk_admin():
     if verify_curr_admin():
         data = D.get_data(base_req=True, lk_admin_req=True)
         if not data:
-            return error()
+            return server_error()
         category = data['curr_category']
 
         if request.method == 'GET':
@@ -862,7 +873,7 @@ def lk_admin():
             if last:
                 data['last'].update(last)
             data['curr_category'] = category
-            return render("lk-admin.html", title=t, data=data)
+        return render("lk-admin.html", title=t, data=data)
     elif verify_authorization():
         return redirect('/lk')
     return redirect(HOME)
@@ -915,7 +926,7 @@ ADMIN_PASSWORD = "admin"
 # Все API
 userAPI = User()
 user_listAPI = UserList()
-goodsAPI = Goods()
+goodsAPI = Gooods()
 goods_listAPI = GoodsList()
 orderAPI = Order()
 order_listAPI = OrdersList()
@@ -946,7 +957,7 @@ if __name__ == '__main__':
     api.add_resource(UserList, '/users')
     api.add_resource(User, '/users/<int:user_id>')
     api.add_resource(GoodsList, '/goods')
-    # api.add_resource(Goods, '/goods/<int:goods_id>')
+    api.add_resource(Gooods, '/goods/<int:goods_id>')
     api.add_resource(OrdersList, '/order')
     api.add_resource(Order, '/order/<path:args>')
 
