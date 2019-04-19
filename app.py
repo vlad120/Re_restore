@@ -27,8 +27,10 @@ class GoodsModel(db.Model):
         return '<GoodsModel {} {} {}руб {}шт>'.format(self.id, self.name, self.price, self.count)
 
     def to_dict(self, id_req=True, name_req=True, description_req=False,
-                short_description_req=True, price_req=True, count_req=False,
-                category_req=True, full_link_req=False, photo_req=False, photos_req=False):
+                short_description_req=False, card_description_req=False,
+                price_req=True, count_req=False, category_req=True,
+                full_category_req=False, full_link_req=False,
+                photo_req=False, photos_req=False):
         d = dict()
         if id_req:
             d['id'] = self.id
@@ -38,12 +40,18 @@ class GoodsModel(db.Model):
             d['description'] = self.description
         if short_description_req:
             d['short_description'] = self.short_description
+        if card_description_req:
+            d['card_description'] = " ".join(self.short_description[:100].split()[:-1]).rstrip('.,/;:!') + " ..."
         if price_req:
             d['price'] = self.price
         if count_req:
             d['count'] = self.count
         if category_req:
             d['category'] = self.category
+        if full_category_req:
+            c = CategoryModel.query.filter_by(name=self.category).first()
+            if c:
+                d['full_category'] = c.to_dict()
         if full_link_req:
             d['full_link'] = '{}/{}/{}'.format(HOME, self.category.strip('/'), self.id)
         if photo_req:
@@ -56,9 +64,20 @@ class GoodsModel(db.Model):
 
 class CategoryModel(db.Model):
     name = db.Column(db.String(150), unique=True, primary_key=True)
+    rus_name = db.Column(db.String(150), unique=True)
 
     def __repr__(self):
         return '<CategoryModel {}>'.format(self.name)
+
+    def to_dict(self, name_req=True, rus_name_req=True, link_req=True):
+        d = dict()
+        if name_req:
+            d['name'] = self.name
+        if rus_name_req:
+            d['rus_name'] = self.rus_name
+        if link_req:
+            d['link'] = HOME + '/' + self.name
+        return d
 
 
 class OrderModel(db.Model):
@@ -151,71 +170,82 @@ class DataTemplate:
             return
 
     def get_base_data(self):
-        return {'menu_items': [{'name': 'Планшеты',
-                                'link': '#'},
-                               {'name': 'Смартфоны',
-                                'link': '#'}],
-                'errors': {'authorization': {'password': None,
-                                             'login': None,
-                                             'other': None,
-                                             'any': False}},
-                'last': {'authorization': {'password': '',
-                                           'login': ''}}
-                }
+        try:
+            return {'menu_items': [c.to_dict() for c in CategoryModel.query.all()],
+                    'basket': get_basket(),
+                    'errors': {'authorization': {'password': None,
+                                                 'login': None,
+                                                 'other': None,
+                                                 'any': False}},
+                    'last': {'authorization': {'password': '',
+                                               'login': ''}}
+                    }
+        except Exception as e:
+            print("Get base data template Error: ", e)
 
     def get_main_data(self):
-        interesting_goods = 10
-        # множество товаров (которые есть в наличии)
-        goods = set(filter(lambda g: g.count > 0, (i for i in GoodsModel.query.all())))
-        # обрезка до нужного количества
-        goods = goods if len(goods) <= interesting_goods else goods[:interesting_goods]
-        # пребразование товаров в формат словаря
-        goods = list(g.to_dict(photo_req=True, full_link_req=True) for g in goods)
-        return {'slides': ['static/main_banners/{}.png'.format(i + 1) for i in range(4)],
-                'len_slides': 4,
-                'goods': goods
-                }
+        try:
+            interesting_goods = '10'
+            api_response = goodsAPI.get(['random', 'n=' + interesting_goods])
+            if api_response['success']:
+                goods = api_response['goods']
+                return {'slides': ['static/main_banners/{}.png'.format(i + 1) for i in range(4)],
+                        'len_slides': 4,
+                        'goods': goods
+                        }
+        except Exception as e:
+            print("Get main data template Error: ", e)
 
     def get_lk_data(self, tmp_a=None):
-        response = userAPI.get((tmp_a if tmp_a else get_authorization())['id'], a=tmp_a)
-        if response['success']:
-            return {'user': response['user'],
-                    'errors': {'change_profile_info': {'name': None,
-                                                       'surname': None,
-                                                       'email': None,
-                                                       'check_password': None,
-                                                       'new_password': None,
-                                                       'photo': None}},
-                    }
+        try:
+            user_id = (tmp_a if tmp_a else get_authorization())['id']
+            response = userAPI.get([user_id], a=tmp_a)
+            if response['success']:
+                return {'user': response['user'],
+                        'errors': {'change_profile_info': {'name': None,
+                                                           'surname': None,
+                                                           'email': None,
+                                                           'check_password': None,
+                                                           'new_password': None,
+                                                           'photo': None}},
+                        }
+        except Exception as e:
+            print("Get lk data template Error: ", e)
 
     def get_lk_admin_data(self, tmp_a=None):
-        goods_response = goods_listAPI.get()
-        orders_response = order_listAPI.get(tmp_a)
-        users_response = user_listAPI.get(tmp_a)
-        data = {'curr_category': 'goods',
-                'goods': goods_response['goods'] if goods_response['success'] else [],
-                'orders': orders_response['orders'] if orders_response['success'] else [],
-                'users': users_response['users'] if users_response['success'] else [],
-                'errors': {'get_data': {'goods': None if goods_response['success'] else goods_response['message'],
-                                        'orders': None if orders_response['success'] else orders_response['message'],
-                                        'users': None if users_response['success'] else users_response['message']},
-                           'add_goods': {}},
-                'last': {'add_goods': {}}
-                }
-        for i in ['name', 'description', 'short_description',
-                  'price', 'count', 'category']:
-            data['errors']['add_goods'][i] = None
-            data['last']['add_goods'][i] = ''
-        return data
+        try:
+            goods_response = goodsAPI.get(['all'], tmp_a)
+            orders_response = orderAPI.get(['all'], tmp_a)
+            users_response = userAPI.get(['all'], tmp_a)
+            data = {'curr_category': 'goods',
+                    'goods': goods_response['goods'] if goods_response['success'] else [],
+                    'orders': orders_response['orders'] if orders_response['success'] else [],
+                    'users': users_response['users'] if users_response['success'] else [],
+                    'errors': {'get_data': {'goods': None if goods_response['success'] else goods_response['message'],
+                                            'orders': None if orders_response['success'] else orders_response['message'],
+                                            'users': None if users_response['success'] else users_response['message']},
+                               'add_goods': {}},
+                    'last': {'add_goods': {}}
+                    }
+            for i in ['name', 'description', 'short_description',
+                      'price', 'count', 'category']:
+                data['errors']['add_goods'][i] = None
+                data['last']['add_goods'][i] = ''
+            return data
+        except Exception as e:
+            print("Get lk-admin data template Error: ", e)
 
     def get_registration_data(self):
-        data = {'errors': {'registration': {}},
-                'last': {'registration': {}}
-                }
-        for i in ['name', 'surname', 'email', 'login', 'password']:
-            data['errors']['registration'][i] = None
-            data['last']['registration'][i] = ''
-        return data
+        try:
+            data = {'errors': {'registration': {}},
+                    'last': {'registration': {}}
+                    }
+            for i in ['name', 'surname', 'email', 'login', 'password']:
+                data['errors']['registration'][i] = None
+                data['last']['registration'][i] = ''
+            return data
+        except Exception as e:
+            print("Get registration data template Error: ", e)
 
 
 def get_authorization(tmp_id=None, tmp_login=None, tmp_password=None, img=False):
@@ -253,6 +283,10 @@ def verify_authorization(admin=False, a=None):
     except:
         sign_out()
         return False
+
+
+def get_basket():
+    return []
 
 
 class Authorization(Resource):
@@ -294,7 +328,7 @@ class Authorization(Resource):
             else:
                 errors['login'] = "Логин не найден в системе."
         except Exception as e:
-            print("Authorization (API) Error:\t", e)
+            print("AuthorizationAPI Error:\t", e)
             errors['other'] = "Ошибка сервера."
         return make_success(False, errors=errors)
 
@@ -361,146 +395,340 @@ class Authorization(Resource):
 
             return make_success(new_user.id, errors=errors)
         except Exception as e:
-            print("Registration (API) Error:\t", e)
+            print("RegistrationAPI Error:\t", e)
             errors['other'] = "Ошибка сервера."
             return make_success(False, message="Server error", errors=errors)
 
 
 class User(Resource):
-    def get(self, user_id, a=None):
-        user = UserModel.query.filter_by(id=user_id).first()
-        # проверка на существование
-        if not user:
-            return make_success(False, message="User doesn't exist")
-        # проверка на собственника учетной записи / админа
-        a = a if a else get_authorization()
-        if not (verify_curr_admin(a) or (a['id'] == user_id and verify_authorization(a=a))):
-            return make_success(False, message="Access Error")
-        return make_success(user=user.to_dict(all_req=True))
+    def get(self, r, a=None):
+        params = dict()
+        if len(r) > 2:
+            return make_success(False, message='Bad request')
+        if len(r) == 2:
+            try:
+                for i in (p.split('=') for p in r[1].split('&')):
+                    params[i[0]] = i[1]
+            except:
+                pass
 
-    def put(self, user_id, request_data=None, a=None):
-        errors = {'name': None,
-                  'surname': None,
-                  'email': None,
-                  'check_password': None,
-                  'new_password': None,
-                  'photo': None}
-        try:
-            parser = reqparse.RequestParser()
-            for arg in ('name', 'surname', 'email', 'check_password', 'new_password', 'subscription', 'photo'):
-                parser.add_argument(arg)
-            args = parser.parse_args()
-            if request_data:
-                args.update(request_data)
-
+        if type(r[0]) is int or r[0].isdigit():
+            user_id = int(r[0])
             user = UserModel.query.filter_by(id=user_id).first()
+            # проверка на существование
             if not user:
-                return make_success(False, message="User doesn't exist")
-
+                return make_success(False, message="User {} doesn't exist".format(user_id))
             # проверка на собственника учетной записи / админа
             a = a if a else get_authorization()
-            if not (verify_curr_admin(a) or (a['id'] == user_id and verify_authorization(a=a))):
+            if not (verify_curr_admin(a) or (int(a['id']) == user_id and verify_authorization(a=a))):
                 return make_success(False, message="Access Error")
+            return make_success(user=user.to_dict(all_req=True))
 
-            if 'photo' in args and args['photo']:
-                photo_name = None
-                try:
-                    ext = args['photo'][0].filename.split('.')[-1]
-                    if ext.lower() in ['png', 'jpg', 'jpeg']:
-                        photo_name = '{}.{}'.format(user.id, 'png')
-                        args['photo'][0].save('static/profiles/' + photo_name)
-                        user.photo = photo_name
-                        db.session.commit()
-                    else:
-                        raise TypeError
-                except Exception as e:
-                    print("Save photo (change user info) Error:\t", e)
-                    if photo_name:
-                        remove(photo_name)
-                        errors['photo'] = "Ошибка при загрузке фото."
+        if r[0].lower() == 'all':
+            if not verify_curr_admin(a):
+                return make_success(False, message='Access Error')
+            try:
+                return make_success(users=[i.to_dict(name_req=True, surname_req=True,
+                                                     email_req=True, login_req=True) for i in
+                                           UserModel.query.all()])
+            except Exception as e:
+                print('UserAPI Error (get all): ', e)
+                return make_success(False, message='Server Error')
+        return make_success(False, message='Bad request')
 
-            if 'check_password' not in args or not args['check_password']:
+    def put(self, r, a=None, request_data=None):
+        params = dict()
+        if len(r) > 2:
+            return make_success(False, message='Bad request')
+        if len(r) == 2:
+            try:
+                for i in (p.split('=') for p in r[1].split('&')):
+                    params[i[0]] = i[1]
+            except:
+                pass
+
+        if type(r[0]) is int or r[0].isdigit():
+            errors = {'name': None,
+                      'surname': None,
+                      'email': None,
+                      'check_password': None,
+                      'new_password': None,
+                      'photo': None}
+            try:
+                user_id = int(r[0])
+                parser = reqparse.RequestParser()
+                for arg in ('name', 'surname', 'email', 'check_password', 'new_password', 'subscription', 'photo'):
+                    parser.add_argument(arg)
+                args = parser.parse_args()
+                if request_data:
+                    args.update(request_data)
+
+                user = UserModel.query.filter_by(id=user_id).first()
+                if not user:
+                    return make_success(False, message="User {} doesn't exist".format(user_id))
+
+                # проверка на собственника учетной записи / админа
+                a = a if a else get_authorization()
+                if not (verify_curr_admin(a) or (int(a['id']) == user_id and verify_authorization(a=a))):
+                    return make_success(False, message="Access Error")
+
                 if 'photo' in args and args['photo']:
-                    return make_success(errors=errors)
-                errors['check_password'] = "Введите старый пароль для подтверждения."
-                return make_success(False, errors=errors)
+                    photo_name = None
+                    try:
+                        ext = args['photo'][0].filename.split('.')[-1]
+                        if ext.lower() in ['png', 'jpg', 'jpeg']:
+                            photo_name = '{}.{}'.format(user.id, 'png')
+                            args['photo'][0].save('static/profiles/' + photo_name)
+                            user.photo = photo_name
+                            db.session.commit()
+                        else:
+                            raise TypeError
+                    except Exception as e:
+                        print("Save photo (change user info) Error:\t", e)
+                        if photo_name:
+                            remove(photo_name)
+                            errors['photo'] = "Ошибка при загрузке фото."
 
-            if not check_password_hash(user.password, args['check_password']):
-                errors['check_password'] = "Старый пароль введен неверно."
-                return make_success(False, errors=errors)
+                if 'check_password' not in args or not args['check_password']:
+                    if 'photo' in args and args['photo']:
+                        return make_success(errors=errors)
+                    errors['check_password'] = "Введите старый пароль для подтверждения."
+                    return make_success(False, errors=errors)
 
-            if args['name'] and args['name'] != user.name:
-                if len(args['name']) > 80:
-                    errors['name'] = "Слишком длинное имя (> 80 символов)."
-                else:
-                    user.name = args['name'].strip()
-            if args['surname'] and args['surname'] != user.surname:
-                if len(args['surname']) > 80:
-                    errors['surname'] = "Слишком длинная фамилия (> 80 символов)."
-                else:
-                    user.surname = args['surname'].strip()
-            if args['email'] and args['email'] != user.email:
-                if len(args['email']) > 120:
-                    errors['email'] = "Слишком длинный e-mail (> 120 символов)."
-                else:
-                    user.email = args['email'].strip()
-            if args['new_password']:
-                if len(args['new_password']) > 100:
-                    errors['new_password'] = "Слишком длинный пароль (> 100 символов)."
-                elif len(args['new_password']) < 3:
-                    errors['new_password'] = "Слишком простой пароль (< 3 символов)."
-                else:
-                    user.password = generate_password_hash(args['new_password'].strip())
+                if not check_password_hash(user.password, args['check_password']):
+                    errors['check_password'] = "Старый пароль введен неверно."
+                    return make_success(False, errors=errors)
 
-            user.subscription = 1 if args['subscription'] else 0
+                if args['name'] and args['name'] != user.name:
+                    if len(args['name']) > 80:
+                        errors['name'] = "Слишком длинное имя (> 80 символов)."
+                    else:
+                        user.name = args['name'].strip()
+                if args['surname'] and args['surname'] != user.surname:
+                    if len(args['surname']) > 80:
+                        errors['surname'] = "Слишком длинная фамилия (> 80 символов)."
+                    else:
+                        user.surname = args['surname'].strip()
+                if args['email'] and args['email'] != user.email:
+                    if len(args['email']) > 120:
+                        errors['email'] = "Слишком длинный e-mail (> 120 символов)."
+                    else:
+                        user.email = args['email'].strip()
+                if args['new_password']:
+                    if len(args['new_password']) > 100:
+                        errors['new_password'] = "Слишком длинный пароль (> 100 символов)."
+                    elif len(args['new_password']) < 3:
+                        errors['new_password'] = "Слишком простой пароль (< 3 символов)."
+                    else:
+                        user.password = generate_password_hash(args['new_password'].strip())
 
-            db.session.commit()
-            return make_success(errors=errors)
-        except Exception as e:
-            print("Change user info Error:\t", e)
-            return make_success(False, 'Server error')
+                user.subscription = 1 if args['subscription'] else 0
 
-    def delete(self, user_id, a=None):
-        # проверка на собственника учетной записи / админа
-        a = a if a else get_authorization()
-        if not (verify_curr_admin(a) or (a['id'] == user_id and verify_authorization(a=a))):
-            return make_success(False, message="Access Error")
-        try:
-            user = UserModel.query.filter_by(id=user_id).first()
-            if user:
-                # удаляем все заказы пользователя
-                for order in OrderModel.query.filter_by(user_id=user_id).all():
-                    db.session.delete(order)
-                db.session.delete(user)
                 db.session.commit()
-                return make_success()
-            return make_success(False, message="User doesn't exist")
-        except Exception as e:
-            print("User delete Error:\t", e)
-            return make_success(False, message="Server Error")
+                return make_success(errors=errors)
+            except Exception as e:
+                print("Change user info Error:\t", e)
+                return make_success(False, 'Server error')
+
+        return make_success(False, 'Bad request')
+
+    def delete(self, r, a=None):
+        params = dict()
+        if len(r) > 2:
+            return make_success(False, message='Bad request')
+        if len(r) == 2:
+            try:
+                for i in (p.split('=') for p in r[1].split('&')):
+                    params[i[0]] = i[1]
+            except:
+                pass
+
+        if type(r[0]) is int or r[0].isdigit():
+            user_id = int(r[0])
+            # проверка на собственника учетной записи / админа
+            a = a if a else get_authorization()
+            if not (verify_curr_admin(a) or (int(a['id']) == user_id and verify_authorization(a=a))):
+                return make_success(False, message="Access Error")
+            try:
+                user = UserModel.query.filter_by(id=user_id).first()
+                if user:
+                    # удаляем все заказы пользователя
+                    for order in OrderModel.query.filter_by(user_id=user_id).all():
+                        db.session.delete(order)
+                    db.session.delete(user)
+                    db.session.commit()
+                    return make_success()
+                return make_success(False, message="User {} doesn't exist".format(user_id))
+            except Exception as e:
+                print("User delete Error:\t", e)
+                return make_success(False, message="Server Error")
+
+        return make_success(False, message='Bad request')
 
 
-class UserList(Resource):
-    def get(self, tmp_a=None):
-        if not verify_curr_admin(tmp_a):
+class Goods(Resource):
+    def get(self, r, a=None):
+        params = dict()
+        if len(r) > 2:
+            return make_success(False, message='Bad request')
+        if len(r) == 2:
+            try:
+                for i in (p.split('=') for p in r[1].split('&')):
+                    params[i[0]] = i[1]
+            except:
+                pass
+
+        # полная информация об одном товаре
+        if type(r[0]) is int or r[0].isdigit():
+            goods_id = int(r[0])
+            try:
+                goods = GoodsModel.query.filter_by(id=goods_id).first()
+                if not goods:
+                    return make_success(False, message="Goods {} doesn't exist".format(goods_id))
+                return make_success(data={'goods': goods.to_dict(description_req=True,
+                                                                 short_description_req=True,
+                                                                 photos_req=True,
+                                                                 count_req=True,
+                                                                 full_category_req=True)})
+            except Exception as e:
+                print("GoodsAPI Error (get {}): ".format(goods_id), e)
+                return make_success(False, message='Server Error')
+
+        # краткая информация обо всех товарах для админа
+        if r[0].lower() == 'all':
+            if verify_curr_admin(a):
+                try:
+                    return make_success(goods=[i.to_dict(full_link_req=True, short_description_req=True)
+                                               for i in GoodsModel.query.all()])
+                except Exception as e:
+                    print("GoodsAPI Error (get all): ", e)
+                    return make_success(False, message='Server Error')
             return make_success(False, message='Access Error')
-        try:
-            return make_success(users=[i.to_dict(name_req=True, surname_req=True,
-                                                 email_req=True, login_req=True) for i in UserModel.query.all()])
-        except:
-            return make_success(False, message='Server Error')
 
+        # 1 или несколько рандомных товаров
+        if r[0].lower() == 'random':
+            try:
+                n = int(params['n']) if 'n' in params else 1
+                # множество товаров (которые есть в наличии)
+                goods = set(filter(lambda g: g.count > 0, (i for i in GoodsModel.query.all())))
+                # обрезка до нужного количества и
+                # преобразование каждого товара в словарь
+                goods = list(g.to_dict(photo_req=True, full_link_req=True,
+                                       card_description_req=True) for g in list(goods)[:n])
+                return make_success(goods=goods)
+            except Exception as e:
+                print("GoodsAPI Error (get random): ", e)
+                return make_success(False, message='Server Error')
 
-class Gooods(Resource):
-    def get(self, goods_id):
-        goods = GoodsModel.query.filter_by(id=goods_id).first()
-        if not goods:
-            return make_success(False, message="Goods doesn't exist")
-        return make_success(data={'goods': goods.to_dict(description_req=True,
-                                                         photos_req=True,
-                                                         count_req=True)})
+        # все товары данной категории
+        category = CategoryModel.query.filter_by(name=r[0].lower()).first()
+        if category:
+            try:
+                return make_success(goods=[i.to_dict(full_link_req=True,
+                                                     card_description_req=True,
+                                                     photo_req=True)
+                                           for i in GoodsModel.query.all()
+                                           ],
+                                    category=category.to_dict())
+            except Exception as e:
+                print("GoodsAPI Error (get category {}): ".format(r[0]), e)
+                return make_success(False, message='Server Error')
 
-    def put(self, goods_id):
+        return make_success(False, message='Bad request')
+
+    def post(self, r, a=None, request_data=None):
+        params = dict()
+        if len(r) > 2:
+            return make_success(False, message='Bad request')
+        if len(r) == 2:
+            try:
+                for i in (p.split('=') for p in r[1].split('&')):
+                    params[i[0]] = i[1]
+            except:
+                pass
+
+        if r[0].lower() == 'new':
+            if not verify_curr_admin(a):
+                return make_success(False, message="Access error")
+
+            all_fields = ['name', 'description', 'short_description',
+                          'price', 'count', 'category', 'rus_category']
+            errors = dict()
+            for field in all_fields:
+                errors[field] = None
+
+            try:
+                parser = reqparse.RequestParser()
+                for arg in all_fields:
+                    parser.add_argument(arg)
+                args = dict(parser.parse_args())
+                if request_data:
+                    for i in request_data:
+                        if i in args:
+                            args[i] = request_data[i].strip() if type(request_data[i]) is str else request_data[i]
+
+                # проверка на пустоту
+                err = False
+                for field in all_fields:
+                    if not args[field]:
+                        errors[field] = 'Поле должно быть заполнено.'
+                        err = True
+                if err:
+                    return make_success(False, message="Empty fields", errors=errors)
+
+                args['category'].strip('/')
+
+                # длина полей (для базы данных)
+                if len(args['name']) > 80:
+                    errors['name'] = "Название должно быть не более 80 символов."
+                if len(args['description']) > 2000:
+                    errors['description'] = "Описание должно быть не более 2000 символов."
+                if len(args['short_description']) > 120:
+                    errors['short_description'] = "Краткое описание должно быть не более 120 символов."
+                if len(args['category']) > 150:
+                    errors['category'] = "Категория не должна превышать 150 символов."
+                if len(args['rus_category']) > 150:
+                    errors['rus_category'] = "Категория не должна превышать 150 символов."
+
+                if any(err for err in errors.values()):
+                    return make_success(False, message="Too much data", errors=errors)
+
+                if not CategoryModel.query.filter_by(name=args['category']).first():
+                    c = CategoryModel(name=args['category'], rus_name=args['rus_category'])
+                    db.session.add(c)
+                args.pop('rus_category')
+
+                # правильный формат количества и цены
+                err = False
+                for val_type, field in ((int, 'count'), (int, 'price')):
+                    try:
+                        args[field] = val_type(args[field])
+                    except ValueError:
+                        errors[field] = "Неверный формат."
+                        err = True
+                if err:
+                    return make_success(False, message="Type Error", errors=errors)
+
+                goods = GoodsModel(**args)
+                db.session.add(goods)
+                db.session.commit()
+                return make_success(goods.id, errors=errors)
+            except Exception as e:
+                print("GoodsAPI Error (add goods): ", e)
+                return make_success(False, message="Server error", errors=errors)
+
+        return make_success(False, message='Bad request')
+
+    def put(self, r, a=None):
+        params = dict()
+        if len(r) > 2:
+            return make_success(False, message='Bad request')
+        if len(r) == 2:
+            try:
+                for i in (p.split('=') for p in r[1].split('&')):
+                    params[i[0]] = i[1]
+            except:
+                pass
         # photos = []
         # if args['photos']:
         #     for i in range(len(args['photos'])):
@@ -523,167 +751,121 @@ class Gooods(Resource):
         # args['photos'] = ";".join(photos)
         return make_success()
 
-    def delete(self, goods_id, a=None):
-        # проверка на админа
-        a = a if a else get_authorization()
-        if not verify_curr_admin(a):
-            return make_success(False, message="Access Error")
-        try:
-            goods = GoodsModel.query.filter_by(id=goods_id).first()
-            if goods:
-                db.session.delete(goods)
-                db.session.commit()
-                return make_success()
-            return make_success(False, message="Goods doesn't exist")
-        except Exception as e:
-            print("Goods delete Error:\t", e)
-            return make_success(False, message="Server Error")
+    def delete(self, r, a=None):
+        params = dict()
+        if len(r) > 2:
+            return make_success(False, message='Bad request')
+        if len(r) == 2:
+            try:
+                for i in (p.split('=') for p in r[1].split('&')):
+                    params[i[0]] = i[1]
+            except:
+                pass
 
+        if type(r[0]) is int or r[0].isdigit():
+            # проверка на админа
+            a = a if a else get_authorization()
+            if not verify_curr_admin(a):
+                return make_success(False, message="Access Error")
 
-class GoodsList(Resource):
-    def get(self):
-        try:
-            return make_success(goods=[i.to_dict(full_link_req=True) for i in GoodsModel.query.all()])
-        except Exception as e:
-            print(e)
-            return make_success(False, message='Server Error')
+            try:
+                goods_id = int(r[0])
+                goods = GoodsModel.query.filter_by(id=goods_id).first()
+                if goods:
+                    db.session.delete(goods)
+                    db.session.commit()
+                    return make_success()
+                return make_success(False, message="Goods doesn't exist")
+            except Exception as e:
+                print("Goods delete Error:\t", e)
+                return make_success(False, message="Server Error")
 
-    def post(self, request_data=None):
-        all_fields = ['name', 'description', 'short_description',
-                      'price', 'count', 'category']
-        errors = dict()
-        for field in all_fields:
-            errors[field] = None
-
-        try:
-            if not verify_curr_admin():
-                return make_success(False, message="Access error")
-
-            parser = reqparse.RequestParser()
-            for arg in all_fields:
-                parser.add_argument(arg)
-            args = dict(parser.parse_args())
-            if request_data:
-                for i in request_data:
-                    if i in args:
-                        args[i] = request_data[i].strip() if type(request_data[i]) is str else request_data[i]
-
-            # проверка на пустоту
-            err = False
-            for field in all_fields:
-                if not args[field]:
-                    errors[field] = 'Поле должно быть заполнено.'
-                    err = True
-            if err:
-                return make_success(False, message="Empty fields", errors=errors)
-
-            args['category'].strip('/')
-
-            # длина полей (для базы данных)
-            if len(args['name']) > 80:
-                errors['name'] = "Название должно быть не более 80 символов."
-            if len(args['description']) > 2000:
-                errors['description'] = "Описание должно быть не более 2000 символов."
-            if len(args['short_description']) > 120:
-                errors['short_description'] = "Краткое описание должно быть не более 120 символов."
-            if len(args['category']) > 150:
-                errors['category'] = "Категория не должна превышать 150 символов."
-
-            if any(err for err in errors.values()):
-                return make_success(False, message="Too much data", errors=errors)
-
-            if not CategoryModel.query.filter_by(name=args['category']).first():
-                c = CategoryModel(name=args['category'])
-                db.session.add(c)
-
-            # правильный формат количества и цены
-            err = False
-            for val_type, field in ((int, 'count'), (int, 'price')):
-                try:
-                    args[field] = val_type(args[field])
-                except ValueError:
-                    errors[field] = "Неверный формат."
-                    err = True
-            if err:
-                return make_success(False, message="Type Error", errors=errors)
-
-            goods = GoodsModel(**args)
-            db.session.add(goods)
-            db.session.commit()
-            return make_success(goods.id, errors=errors)
-        except Exception as e:
-            print("Add goods (API) Error:\t", e)
-            return make_success(False, message="Server error", errors=errors)
+        return make_success(False, message='Bad request')
 
 
 class Order(Resource):
-    def delete(self, *args, a=None):
-        if not args[0].isdigit():
-            return make_success(False, message="Null request")
-        try:
-            order_id = int(args[0])
-            order = OrderModel.query.filter_by(id=order_id).first()
-            if order:
-                # проверка на собственника учетной записи / админа
-                a = a if a else get_authorization()
-                if not (verify_curr_admin(a) or (a['id'] == order.user_id and verify_authorization(a=a))):
-                    return make_success(False, message="Access Error")
-                db.session.delete(order)
-                db.session.commit()
-                return make_success()
-            return make_success(False, message="Order doesn't exist")
-        except Exception as e:
-            print("Order delete Error:\t", e)
-            return make_success(False, message="Server Error")
+    def get(self, r, a=None):
+        params = dict()
+        if len(r) > 2:
+            return make_success(False, message='Bad request')
+        if len(r) == 2:
+            try:
+                for i in (p.split('=') for p in r[1].split('&')):
+                    params[i[0]] = i[1]
+            except:
+                pass
 
-    def put(self, *args, a=None):
-        if not args[0].isdigit() or len(args) < 2 or \
-                args[1] not in ('processing', 'cancel', 'done'):
-            return make_success(False, message="Bad request")
-        try:
-            order_id = int(args[0])
-            order = OrderModel.query.filter_by(id=order_id).first()
-            if order:
-                # проверка на админа
-                a = a if a else get_authorization()
-                if not verify_curr_admin(a):
-                    return make_success(False, message="Access Error")
-                order.status = args[1]
-                db.session.commit()
-                return make_success()
-            return make_success(False, message="Order doesn't exist")
-        except Exception as e:
-            print("Order put Error:\t", e)
-            return make_success(False, message="Server Error")
+        if r[0].lower() == 'all':
+            if not verify_curr_admin(a):
+                return make_success(False, message='Access Error')
+            try:
+                return make_success(orders=[i.to_dict() for i in OrderModel.query.all()])
+            except Exception as e:
+                print("OrderAPI Error (): ", e)
+                return make_success(False, message='Server Error')
 
+        return make_success(False, message='Bad request')
 
-class OrdersList(Resource):
-    def get(self, tmp_a=None):
-        if not verify_curr_admin(tmp_a):
-            return make_success(False, message='Access Error')
-        try:
-            return make_success(orders=[i.to_dict() for i in OrderModel.query.all()])
-        except Exception as e:
-            print(e)
-            return make_success(False, message='Server Error')
+    def delete(self, r, a=None):
+        params = dict()
+        if len(r) > 2:
+            return make_success(False, message='Bad request')
+        if len(r) == 2:
+            try:
+                for i in (p.split('=') for p in r[1].split('&')):
+                    params[i[0]] = i[1]
+            except:
+                pass
 
+        if type(r[0]) is int or r[0].isdigit():
+            try:
+                order_id = int(r[0])
+                order = OrderModel.query.filter_by(id=order_id).first()
+                if order:
+                    # проверка на собственника учетной записи / админа
+                    a = a if a else get_authorization()
+                    if not (verify_curr_admin(a) or (int(a['id']) == order.user_id and verify_authorization(a=a))):
+                        return make_success(False, message="Access Error")
+                    db.session.delete(order)
+                    db.session.commit()
+                    return make_success()
+                return make_success(False, message="Order doesn't exist")
+            except Exception as e:
+                print("Order delete Error:\t", e)
+                return make_success(False, message="Server Error")
 
-def make_success(state=True, message='Ok', **kwargs):
-    data = {'success': state if state else False}
-    if message:
-        data['message'] = message
-    data.update(kwargs)
-    return data
+        return make_success(False, message='Bad request')
 
+    def put(self, r, a=None):
+        params = dict()
+        if len(r) > 2:
+            return make_success(False, message='Bad request')
+        if len(r) == 2:
+            try:
+                for i in (p.split('=') for p in r[1].split('&')):
+                    params[i[0]] = i[1]
+            except:
+                pass
 
-def get_request_data(files=False):
-    form = dict(request.form)
-    if files:
-        form.update(dict(request.files))
-    for i in form:
-        if type(form[i]) is list and i not in ['photo', 'photos']:
-            form[i] = form[i][-1]
-    return form
+        if type(r[0]) is int or r[0].isdigit():
+            try:
+                if 'status' in params:
+                    order_id = int(r[0])
+                    order = OrderModel.query.filter_by(id=order_id).first()
+                    if order:
+                        # проверка на админа
+                        a = a if a else get_authorization()
+                        if not verify_curr_admin(a):
+                            return make_success(False, message="Access Error")
+                        order.status = params['status']
+                        db.session.commit()
+                        return make_success()
+                    return make_success(False, message="Order doesn't exist")
+            except Exception as e:
+                print("Order put Error:\t", e)
+                return make_success(False, message="Server Error")
+
+        return make_success(False, message='Bad request')
 
 
 @app.route('/re_restore', methods=["GET", "POST"])
@@ -700,17 +882,23 @@ def re_restore():
 
 
 @app.route('/re_restore/<string:category>')
-def category(category):
-    return render('/')
+def goods_category(category):
+    api_response = goodsAPI.get([category])
+    if api_response['success']:
+        data = D.get_base_data()
+        data['goods'] = api_response['goods']
+        data['category'] = api_response['category']
+        return render('goods-category.html', title=api_response['category']['rus_name'], data=data)
+    return server_error(message=api_response['message'])
 
 
 @app.route('/re_restore/<string:category>/<int:goods_id>', methods=["GET", "POST"])
-def goods(category, goods_id):
+def full_goods(category, goods_id):
     data = D.get_data(base_req=True)
     if not data:
         return server_error()
 
-    api_response = goodsAPI.get(goods_id)
+    api_response = goodsAPI.get([goods_id])
     if not api_response['success']:
         return error(message=api_response['message'])
     data.update(api_response['data'])
@@ -725,6 +913,9 @@ def goods(category, goods_id):
     if request.method == "POST":
         if 'sign-in' in request.form:
             return sign_in('goods.html', t, data)
+        if 'addToBasket' in request.form:
+            # add_to_basket(request.form)
+            pass
 
 
 def sign_in(page, t, data, ready_data=None):
@@ -802,16 +993,21 @@ def lk():
         if not data:
             return server_error()
 
-        if request.method == 'POST':
-            if 'changeUserInfoBtn' in request.form:
-                response = userAPI.put(get_authorization()['id'], request_data=get_request_data())
-                data = D.get_data(base_req=True, lk_req=True)
-                data['errors']['change_profile_info'].update(response['errors'])
-            elif 'photo' in request.files:
-                response = userAPI.put(get_authorization()['id'], request_data=get_request_data(files=True))
-                data = D.get_data(base_req=True, lk_req=True)
-                data['errors']['change_profile_info'].update(response['errors'])
+        request_data = get_request_data(files=True)
 
+        if request.method == 'POST':
+            if 'changeUserInfoBtn' in request_data:
+                response = userAPI.put([get_authorization()['id']], request_data=request_data)
+                data = D.get_data(base_req=True, lk_req=True)
+                data['errors']['change_profile_info'].update(response['errors'])
+            if 'photo' in request_data:
+                response = userAPI.put([get_authorization()['id']], request_data=request_data)
+                data = D.get_data(base_req=True, lk_req=True)
+                data['errors']['change_profile_info'].update(response['errors'])
+            if 'deleteUserBtn' in request_data:
+                resp = userAPI.delete([request_data['deleteUserBtn']])
+                if resp['success']:
+                    return sign_out()
         return render("lk.html", title=t, data=data)
     return redirect(HOME)
 
@@ -835,34 +1031,34 @@ def lk_admin():
             last = dict()
             if 'addGoodsBtn' in form:
                 category = 'goods'
-                response = goods_listAPI.post(request_data=form)
+                response = goodsAPI.post(['new'], request_data=form)
                 if not response['success']:
                     err['add_goods'] = response['errors']
                     last['add_goods'] = form
                     category = 'addGoods'
             elif 'deleteGoodsBtn' in form:
                 category = 'goods'
-                resp = goodsAPI.delete(form['goodsID'])
+                resp = goodsAPI.delete([form['deleteGoodsBtn']])
                 if not resp['success']:
                     err['add_data']['goods'] = resp['message']
             elif 'deleteOrderBtn' in form:
                 category = 'orders'
-                resp = orderAPI.delete(form['orderID'])
+                resp = orderAPI.delete([form['deleteOrderBtn']])
                 if not resp['success']:
                     err['add_data']['orders'] = resp['message']
             elif 'cancelOrderBtn' in form:
                 category = 'orders'
-                resp = orderAPI.put(form['orderID'], 'cancel')
+                resp = orderAPI.put([form['cancelOrderBtn'], 'status=cancel'])
                 if not resp['success']:
                     err['add_data']['orders'] = resp['message']
             elif 'doneOrderBtn' in form:
                 category = 'orders'
-                resp = orderAPI.put(form['orderID'], 'done')
+                resp = orderAPI.put([form['doneOrderBtn'], 'status=done'])
                 if not resp['success']:
                     err['add_data']['orders'] = resp['message']
             elif 'deleteUserBtn' in form:
                 category = 'users'
-                resp = userAPI.delete(form['userID'])
+                resp = userAPI.delete([form['deleteUserBtn']])
                 if not resp['success']:
                     err['add_data']['users'] = resp['message']
             data = D.get_data(base_req=True, lk_admin_req=True)
@@ -886,18 +1082,18 @@ def error(err=520, message='Что-то пошло не так :('):
 
 
 @app.errorhandler(401)
-def access_error(err=None):
-    return error(401, 'Отказано в доступе :(')
+def access_error(err=None, message=''):
+    return error(401, 'Отказано в доступе :(\n{}'.format(message))
 
 
 @app.errorhandler(404)
-def not_found(err=None):
-    return error(404, 'Страница не найдена :(')
+def not_found(err=None, message=''):
+    return error(404, 'Страница не найдена :(\n{}'.format(message))
 
 
 @app.errorhandler(500)
-def server_error(err=None):
-    return error(500, 'Ошибка сервера :(')
+def server_error(err=None, message=''):
+    return error(500, 'Ошибка сервера :(\n{}'.format(message))
 
 
 @app.route('/')
@@ -914,6 +1110,25 @@ def render(template, a=None, **kwargs):
     return render_template(template, authorization=authorization, **kwargs)
 
 
+def make_success(state=True, message='Ok', **kwargs):
+    data = {'success': state if state else False}
+    if message == 'Ok':
+        message = 'Ok' if state else 'Unknown Error'
+    data['message'] = message
+    data.update(kwargs)
+    return data
+
+
+def get_request_data(files=False):
+    form = dict(request.form)
+    if files:
+        form.update(dict(request.files))
+    for i in form:
+        if type(form[i]) is list and i not in ['photo', 'photos']:
+            form[i] = form[i][-1]
+    return form
+
+
 HOME = '/re_restore'
 HOST = '127.0.0.1'
 PORT = 8080
@@ -925,11 +1140,8 @@ ADMIN_PASSWORD = "admin"
 
 # Все API
 userAPI = User()
-user_listAPI = UserList()
-goodsAPI = Gooods()
-goods_listAPI = GoodsList()
+goodsAPI = Goods()
 orderAPI = Order()
-order_listAPI = OrdersList()
 authorizationAPI = Authorization()
 
 D = DataTemplate()
@@ -942,10 +1154,11 @@ if __name__ == '__main__':
     # db.session.add(new_goods)
     # db.session.commit()
     #
-    # new_order = OrderModel(total=52000, user_id=1,
-    #                        goods={'goods': [{'about': GoodsModel.query.filter_by(id=1).first().to_dict(full_link_req=True),
-    #                                          'count': 7}]},
-    #                        )
+    # new_order = OrderModel(
+    #   total=52000, user_id=1,
+    #   goods={'goods': [{'about': GoodsModel.query.filter_by(id=1).first().to_dict(full_link_req=True),
+    #                     'count': 7}]},
+    # )
     # db.session.add(new_order)
     # db.session.commit()
 
@@ -954,11 +1167,8 @@ if __name__ == '__main__':
     # db.session.commit()
 
     api.add_resource(Authorization, '/authorization')
-    api.add_resource(UserList, '/users')
-    api.add_resource(User, '/users/<int:user_id>')
-    api.add_resource(GoodsList, '/goods')
-    api.add_resource(Gooods, '/goods/<int:goods_id>')
-    api.add_resource(OrdersList, '/order')
-    api.add_resource(Order, '/order/<path:args>')
+    api.add_resource(User, '/users/<path:r>')
+    api.add_resource(Goods, '/goods/<path:r>')
+    api.add_resource(Order, '/order/<path:r>')
 
     app.run(port=PORT, host=HOST)

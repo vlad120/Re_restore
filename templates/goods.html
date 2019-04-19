@@ -4,8 +4,17 @@
     <style type="text/css">
         .content { margin-left: 16px; }
         .one-line { display: inline-block; }
+        .category-link {
+            color: dimgrey;
+            margin-top: 65px;
+            margin-left: 6px;
+        }
+        .category-link:hover {
+            text-decoration: none;
+            color: seagreen;
+        }
         .base-title {
-            margin-top: 70px;
+            margin-top: 20px;
             color: teal;
         }
         .carousel {
@@ -33,6 +42,10 @@
 
 
 {% block content %}
+    <h5 class="content">
+        <a href="{{ data['goods']['full_category']['link'] }}"
+           class="category-link one-line">/{{ data['goods']['full_category']['rus_name'] }}</a>
+    </h5>
     <h2 class="content base-title"><b>{{ data['goods']['name'] }}</b></h2>
     <div id="carouselExampleIndicators" class="carousel slide content one-line" data-ride="carousel">
         <ol class="carousel-indicators">
@@ -64,10 +77,16 @@
     <div class="card one-line main-card">
         <div class="card-body">
             <h2 class="card-title" style="color: green"><b>{{ data['goods']['price'] }}₽</b></h2>
-            <!--Если не в корзине - поменять на "В корзине" (позже) -->
-            <a href="/add-to-basket/{{ data['goods']['id'] }}" class="btn btn-info btn-buy">Купить</a>
+            {% if data['goods']['id'] in data['basket'] %}
+                <button type="button" class="btn btn-success" disabled>В корзине</button>
+            {% else %}
+                <form method="post">
+                    <input type="hidden" name="addToBasketGoodsID" value="{{ data['goods']['id'] }}">
+                    <button type="button" class="btn btn-info btn-buy" name="addToBasket">В корзину</button>
+                </form>
+            {% endif %}
             <h6 class="card-subtitle mb-2 text-muted"><b>Осталось:</b> {{ data['goods']['count'] }} шт</h6>
-            <p style="font-size: 20px;">{{ data['goods']['short_description'] }}</p>
+            <p style="font-size: 20px;"><em>{{ data['goods']['short_description'] }}</em></p>
       </div>
     </div>
     <div class="content">

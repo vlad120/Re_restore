@@ -24,10 +24,6 @@
             margin-bottom: 10px;
             margin-right: 16px;
         }
-        .card-header {
-            height: 40px;
-            padding-top: 7px;
-        }
         .card-text { margin-bottom: 0; }
         .card-header-text {
             font-size: 18px;
@@ -84,8 +80,7 @@
                                 <div class="card-body">
                                     <p class="card-text">{{ item['short_description'] }}</p>
                                     <form method="post">
-                                        <input type="hidden" name="goodsID" value="{{ item['id'] }}">
-                                        <button type="submit" class="btn btn-dark" name="deleteGoodsBtn">Удалить</button>
+                                        <button type="submit" class="btn btn-dark" name="deleteGoodsBtn" value="{{ item['id'] }}">Удалить</button>
                                     </form>
                                 </div>
                             </div>
@@ -123,17 +118,14 @@
                                     -------------------------------------
                                     <p class="card-text"><b>Итого:</b> {{ item['total'] }}руб</p>
                                     <form method="post" class="one-line" style="float: right; margin-top: 5px;">
-                                        <input type="hidden" name="orderID" value="{{ item['id'] }}">
-                                        <button type="submit" class="btn btn-dark" name="deleteOrderBtn">Удалить</button>
+                                        <button type="submit" class="btn btn-dark" name="deleteOrderBtn" value="{{ item['id'] }}">Удалить</button>
                                     </form>
                                     {% if item['status'] == 'processing' %}
                                         <form method="post" class="one-line" style="float: right; margin-right: 20px; margin-top: 5px;">
-                                            <input type="hidden" name="orderID" value="{{ item['id'] }}">
-                                            <button type="submit" class="btn btn-warning" name="cancelOrderBtn">Отменить</button>
+                                            <button type="submit" class="btn btn-warning" name="cancelOrderBtn" value="{{ item['id'] }}">Отменить</button>
                                         </form>
                                         <form method="post" class="one-line" style="float: right; margin-right: 20px; margin-top: 5px;">
-                                            <input type="hidden" name="orderID" value="{{ item['id'] }}">
-                                            <button type="submit" class="btn btn-success" name="doneOrderBtn">Готово</button>
+                                            <button type="submit" class="btn btn-success" name="doneOrderBtn" value="{{ item['id'] }}">Готово</button>
                                         </form>
                                     {% endif %}
                                 </div>
@@ -153,8 +145,7 @@
                                         <p class="card-text">Логин: {{ user['login'] }}</p>
                                     </div>
                                     <form method="post" class="one-line">
-                                        <input type="hidden" name="userID" value="{{ user['id'] }}">
-                                        <button type="submit" class="btn btn-dark" name="deleteUserBtn">Удалить</button>
+                                        <button type="submit" class="btn btn-dark" name="deleteUserBtn" value="{{ user['id'] }}">Удалить</button>
                                     </form>
                                 </div>
                             </div>
@@ -189,7 +180,8 @@
                                     <div class="input-group-prepend">
                                         <span class="input-group-text">%</span>
                                     </div>
-                                    <textarea type="text" class="form-control" name="description" placeholder="Полное описание">{{ data['last']['add_goods']['description'] }}</textarea>
+                                    <textarea type="text" class="form-control" name="description"
+                                              placeholder="Полное описание" style="height: 300px;">{{ data['last']['add_goods']['description'] }}</textarea>
                                 </div>
                                 {% if data['errors']['add_goods']['description'] %}
                                     <p class="add-goods-error" style="margin-top: 15px;">{{ data['errors']['add_goods']['description'] }}</p>
@@ -222,10 +214,21 @@
                                     <div class="input-group-prepend">
                                         <span class="input-group-text">/</span>
                                     </div>
-                                    <input type="text" class="form-control" name="category" placeholder="Категория" value="{{ data['last']['add_goods']['category'] }}">
+                                    <input type="text" class="form-control" name="category" placeholder="Категория на английском" value="{{ data['last']['add_goods']['category'] }}">
                                 </div>
                                 {% if data['errors']['add_goods']['category'] %}
                                     <p class="add-goods-error">{{ data['errors']['add_goods']['category'] }}</p>
+                                {% endif %}
+                            </p>
+                            <p>
+                                <div class="input-group mb-3 form-fields">
+                                    <div class="input-group-prepend">
+                                        <span class="input-group-text">/</span>
+                                    </div>
+                                    <input type="text" class="form-control" name="rus_category" placeholder="Категория на русском" value="{{ data['last']['add_goods']['rus_category'] }}">
+                                </div>
+                                {% if data['errors']['add_goods']['rus_category'] %}
+                                    <p class="add-goods-error">{{ data['errors']['add_goods']['rus_category'] }}</p>
                                 {% endif %}
                             </p>
                             <p>

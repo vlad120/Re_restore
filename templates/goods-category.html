@@ -1,0 +1,51 @@
+{% extends "Base.html" %}
+
+{% block style %}
+    <style type="text/css">
+        .base-title {
+            margin-top: 75px;
+            color: teal;
+        }
+        .content { margin-left: 50px; }
+        .card {
+            margin-top: 20px;
+            margin-bottom: 5px;
+        }
+        .one-line { display: inline-block; }
+        .card-img-top {
+            height: 180px;
+            width: auto;
+            margin-top: 20px;
+        }
+        .goods-title { color: green; }
+        .goods-title:hover {
+            text-decoration: none;
+            color: teal;
+        }
+    </style>
+{% endblock %}
+
+
+{% block content %}
+    <h3 class="base-title content">{{ data['rus_category'] }}</h3>
+    <div style="min-width: 750px;">
+        {% for item in data['goods'] %}
+            <div class="card content one-line" style="width: 300px;">
+                <p style="text-align: center; margin-bottom: 0;"><img src="{{ item['photo'] }}" class="card-img-top" alt="Упс..."></p>
+                <div class="card-body">
+                    <h5 class="card-title"><a href="{{ item['full_link'] }}" class="goods-title">{{ item['name'] }}</a></h5>
+                    <p class="card-text">{{ item['card_description'] }}</p>
+                    <a href="{{ item['full_link'] }}" class="btn btn-info btn-buy one-line" style="margin-right: 10px;">Подробнее</a>
+                    {% if item['id'] in data['basket'] %}
+                        <button type="button" class="btn btn-success" disabled>В корзине</button>
+                    {% else %}
+                        <form method="post"class="one-line">
+                            <input type="hidden" name="addToBasketGoodsID" value="{{ item['id'] }}">
+                            <button type="button" class="btn btn-outline-info" name="addToBasket">В корзину</button>
+                        </form>
+                    {% endif %}
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+{% endblock %}

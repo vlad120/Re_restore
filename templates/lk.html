@@ -129,8 +129,11 @@
                 <label for="subscriptionCheck" style="margin-top: 20px; margin-left: 5px;">Подписка на e-mail рассылку</label>
             </p>
             <button type="submit" class="btn btn-info one-line" style="margin-bottom: 5px;" name="changeUserInfoBtn">Сохранить</button>
+            <form method="post">
+                <button type="submit" class="btn btn-secondary delete-profile-btn one-line"
+                        name="deleteUserBtn" value="{{ data['user']['id'] }}">Удалить профиль</button>
+            </form>
         </form>
-        <a href="/delete-profile/{{ authorization['id'] }}" class="btn btn-secondary delete-profile-btn one-line" name="deleteUser">Удалить профиль</a>
     </div>
 
     <form method="post" enctype="multipart/form-data">

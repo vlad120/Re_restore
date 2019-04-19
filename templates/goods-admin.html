@@ -4,6 +4,15 @@
     <style type="text/css">
         .content { margin-left: 16px; }
         .one-line { display: inline-block; }
+        .category-link {
+            color: dimgrey;
+            margin-top: 65px;
+            margin-left: 6px;
+        }
+        .category-link:hover {
+            text-decoration: none;
+            color: seagreen;
+        }
         .base-title {
             margin-top: 70px;
             color: teal;
@@ -33,6 +42,10 @@
 
 
 {% block content %}
+    <h5 class="content">
+        <a href="{{ data['goods']['full_category']['link'] }}"
+           class="category-link one-line">/{{ data['goods']['full_category']['rus_name'] }}</a>
+    </h5>
     <h2 class="content base-title"><b>{{ data['goods']['name'] }}</b></h2>
     <div id="carouselExampleIndicators" class="carousel slide content one-line" data-ride="carousel">
         <ol class="carousel-indicators">
@@ -64,6 +77,7 @@
     <div class="card one-line main-card">
         <div class="card-body">
             <h2 class="card-title" style="color: green"><b>{{ data['goods']['price'] }}₽</b></h2>
+            <button type="button" class="btn btn-info btn-buy" disabled>В корзину</button>
             <h6 class="card-subtitle mb-2 text-muted"><b>Осталось:</b> {{ data['goods']['count'] }} шт</h6>
             <p style="font-size: 20px;">{{ data['goods']['short_description'] }}</p>
       </div>
