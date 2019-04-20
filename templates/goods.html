@@ -56,11 +56,11 @@
         </ol>
         <div class="carousel-inner">
             <div class="carousel-item active">
-                <img src="{{ data['goods']['photos'][0] }}" class="d-block w-100" alt="Упс...">
+                <a href="{{ data['goods']['photos'][0] }}" target="_blank"><img src="{{ data['goods']['photos'][0] }}" class="d-block w-100" alt="Упс..."></a>
             </div>
             {% for photo in data['goods']['photos'][1:] %}
                 <div class="carousel-item">
-                    <img src="photo" class="d-block w-100" alt="Упс...">
+                    <a href="{{ photo }}" target="_blank"><img src="{{ photo }}" class="d-block w-100" alt="Упс..."></a>
                 </div>
             {% endfor %}
         </div>

@@ -53,11 +53,15 @@
     <div style="min-width: 750px;">
         {% for item in data['goods'] %}
             <div class="card content one-line" style="width: 300px;">
-                <p style="text-align: center; margin-bottom: 0;"><img src="{{ item['photo'] }}" class="card-img-top" alt="Упс..."></p>
+                <p style="text-align: center; margin-bottom: 0;">
+                    <a href="{{ item['full_link'] }}">
+                        <img src="{{ item['photo'] }}" class="card-img-top" alt="Упс...">
+                    </a>
+                </p>
                 <div class="card-body">
                     <h5 class="card-title"><a href="{{ item['full_link'] }}" class="goods-title">{{ item['name'] }}</a></h5>
                     <p class="card-text">{{ item['card_description'] }}</p>
-                    <a href="{{ item['full_link'] }}" class="btn btn-info btn-buy one-line" style="margin-right: 10px;">Подробнее</a>
+                    <a href="{{ item['full_link'] }}" target="_blank" class="btn btn-info btn-buy one-line" style="margin-right: 10px;">Подробнее</a>
                     {% if item['id'] in data['basket'] %}
                         <button type="button" class="btn btn-success" disabled>В корзине</button>
                     {% else %}
