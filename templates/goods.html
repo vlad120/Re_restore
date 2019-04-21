@@ -21,8 +21,9 @@
             margin-top: 20px;
             max-width: 450px;
             width: 40%;
+            min-height: 350px;
         }
-        .d-block { border-radius: 8px; }
+        .goods-photo { border-radius: 8px; }
         .main-card {
             float: right;
             margin-right: 16px;
@@ -56,7 +57,7 @@
         </ol>
         <div class="carousel-inner">
             <div class="carousel-item active">
-                <a href="{{ data['goods']['photos'][0] }}" target="_blank"><img src="{{ data['goods']['photos'][0] }}" class="d-block w-100" alt="Упс..."></a>
+                <a href="{{ data['goods']['photos'][0] }}" target="_blank"><img src="{{ data['goods']['photos'][0] }}" class="d-block w-100 goods-photo" alt="Упс..."></a>
             </div>
             {% for photo in data['goods']['photos'][1:] %}
                 <div class="carousel-item">
@@ -78,11 +79,11 @@
         <div class="card-body">
             <h2 class="card-title" style="color: green"><b>{{ data['goods']['price'] }}₽</b></h2>
             {% if data['goods']['id'] in data['basket'] %}
-                <button type="button" class="btn btn-success" disabled>В корзине</button>
+                <button type="button" class="btn btn-success btn-buy" disabled>В корзине</button>
             {% else %}
                 <form method="post">
                     <input type="hidden" name="addToBasketGoodsID" value="{{ data['goods']['id'] }}">
-                    <button type="button" class="btn btn-info btn-buy" name="addToBasket">В корзину</button>
+                    <button type="submit" class="btn btn-info btn-buy" name="addToBasket" {% if not authorization['id'] %}disabled{% endif %}>В корзину</button>
                 </form>
             {% endif %}
             <h6 class="card-subtitle mb-2 text-muted"><b>Осталось:</b> {{ data['goods']['count'] }} шт</h6>

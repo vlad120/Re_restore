@@ -27,21 +27,30 @@
             text-decoration: none;
             color: teal;
         }
+        .goods-price {
+            font-size: 22px;
+            font-style: italic;
+            color: seagreen;
+            margin-bottom: 5px;
+            float: right;
+            margin-left: 100px;
+            margin-right: 40px;
+        }
     </style>
 {% endblock %}
 
 
 {% block content %}
-    <h3 class="base-title content one-line">{{ data['category']['rus_name'] }}</h3>
+    <h3 class="base-title content one-line">{{ data['full_category']['rus_name'] }}</h3>
     <form method="post" class="show one-line">
         <div class="btn-group" role="group">
             <button id="btnGroupDrop1" type="button" class="btn btn-secondary dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                 Сортировка
             </button>
             <div class="dropdown-menu" aria-labelledby="btnGroupDrop1">
-                <button type="submit" class="dropdown-item" name="NEW">Сначала новинки</button>
-                <button type="submit" class="dropdown-item" name="CHE">Сначала дешевле</button>
-                <button type="submit" class="dropdown-item" name="EXP">Сначала дороже</button>
+                <button type="submit" class="dropdown-item" name="sorting" value="NEW">Сначала новинки</button>
+                <button type="submit" class="dropdown-item" name="sorting" value="CHE">Сначала дешевле</button>
+                <button type="submit" class="dropdown-item" name="sorting" value="EXP">Сначала дороже</button>
             </div>
         </div>
     </form>
@@ -56,14 +65,15 @@
                 </p>
                 <div class="card-body">
                     <h5 class="card-title"><a href="{{ item['full_link'] }}" class="goods-title">{{ item['name'] }}</a></h5>
-                    <p class="card-text">{{ item['card_description'] }}</p>
+                    <p class="card-text" style="margin-bottom: 5px;">{{ item['card_description'] }}</p>
+                    <p class="card-text goods-price"><b>{{ item['price'] }}₽</b></p>
                     <a href="{{ item['full_link'] }}" target="_blank" class="btn btn-info btn-buy one-line" style="margin-right: 10px;">Подробнее</a>
                     {% if item['id'] in data['basket'] %}
                         <button type="button" class="btn btn-success" disabled>В корзине</button>
                     {% else %}
-                        <form method="post"class="one-line">
+                        <form method="post" class="one-line">
                             <input type="hidden" name="addToBasketGoodsID" value="{{ item['id'] }}">
-                            <button type="button" class="btn btn-outline-info" name="addToBasket">В корзину</button>
+                            <button type="submit" class="btn btn-outline-info" name="addToBasket" {% if not authorization['id'] %}disabled{% endif %}>В корзину</button>
                         </form>
                     {% endif %}
                 </div>

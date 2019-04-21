@@ -1,0 +1,63 @@
+{% extends "Base.html" %}
+
+{% block style %}
+    <style type="text/css">
+        .content { margin-left: 16px; }
+        .base-title {
+            margin-top: 70px;
+            color: springgreen;
+        }
+        .goods-card {
+            margin-bottom: 10px;
+            margin-right: 16px;
+        }
+        .card-text { margin-bottom: 0; }
+        .card-header-text {
+            font-size: 18px;
+            color: seagreen;
+        }
+        .count-field {
+            width: 80px;
+            height: 38px;
+            padding-bottom: 10px;
+        }
+        .status {
+            float: right;
+            padding-right: 20px;
+            color: slateblue;
+        }
+        .order-error {
+            margin-left: 70px;
+            font-size: 14px;
+            color: orangered;
+            margin-bottom: 5px;
+        }
+        .card-header-text:hover { text-decoration: none; }
+        .one-line { display: inline-block; }
+    </style>
+{% endblock %}
+
+
+{% block content %}
+    <h2 class="content base-title"><b>Корзина</b></h2>
+    <br><br>
+    <div class="content">
+        {% for item in data['basket_data']['goods'] %}
+            <div class="card border-info mb-3 goods-card">
+                <div class="card-header card-header-text"><b><a class="card-header-text" href="{{ item['full_link'] }}"><i>{{ item['name'] }}</i></a></b></div>
+                <div class="card-body">
+                    <p class="card-text">{{ item['short_description'] }}</p>
+                    <form method="post" style="float: right; margin-top: 10px;">
+                        <input type="number" class="form-control one-line count-field" name="countGoods" value="{{ item['count'] }}">
+                        <button type="submit" class="btn btn-info one-line" style="margin-right: 20px;" name="editCountGoodsBtn" value="{{ item['id'] }}">Изменить</button>
+                        <button type="submit" class="btn btn-dark one-line" name="deleteGoodsBtn" value="{{ item['id'] }}">Удалить</button>
+                    </form>
+                </div>
+            </div>
+        {% endfor %}
+        {% if not data['basket_data']['goods'] %}
+            <h3 style="margin-left: 40px; color: cornflowerblue;"><b><i>Здесь пока ничего нет ;)</i></b></h3>
+        {% endif %}
+    </div>
+    <br><br>
+{% endblock %}

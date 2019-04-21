@@ -141,9 +141,11 @@
         </div>
     </form>
     {% if data['errors']['edit_goods']['delete_photo'] %}
-            <p class="change-goods-error">{{ data['errors']['edit_goods']['delete_photo'] }}</p>
-        {% endif %}
+        <br>
+        <p class="change-goods-error">{{ data['errors']['edit_goods']['delete_photo'] }}</p>
+    {% endif %}
     {% if data['errors']['edit_goods']['add_photo'] %}
+        <br>
         <p class="change-goods-error">{{ data['errors']['edit_goods']['add_photo'] }}</p>
     {% endif %}
     <form method="post">

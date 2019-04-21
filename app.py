@@ -4,12 +4,7 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import check_password_hash, generate_password_hash
 from os import remove, listdir, makedirs, rmdir, path, rename
 from shutil import copyfile
-
-
-def get_folder(goods, sl=True, category=None):
-    name = "_".join(goods.name[:10].split())
-    category = (category if category else goods.category).strip(' /')
-    return 'static/goods/{}/{}'.format(category, name) + ('/' if sl else '')
+from copy import deepcopy
 
 
 app = Flask(__name__)
@@ -21,6 +16,70 @@ db = SQLAlchemy(app)
 
 NO_GOODS_PHOTO = '/static/goods/NoPhoto.jpg'
 NO_PROFILE_PHOTO = '/static/profiles/NoPhoto.jpg'
+
+
+def get_authorization(tmp_id=None, tmp_login=None, tmp_password=None,
+                      img=False, params=None):
+    if params and type(params) == dict and 'authorization' in params:
+        if params['authorization']:
+            try:
+                p = params['authorization'].split(';')
+                tmp_login, tmp_password = p[0], p[1]
+                tmp_id = UserModel.query.filter_by(login=tmp_login).first().id
+            except:
+                tmp_id, tmp_login, tmp_password = None, None, None
+
+    a = {'id': tmp_id if tmp_id else request.cookies.get('userID'),
+         'login': tmp_login if tmp_login else request.cookies.get('userLogin'),
+         'password': tmp_password if tmp_password else request.cookies.get('userPassword')}
+    if img and a['id']:
+        user = UserModel.query.filter_by(id=a['id']).first()
+        if user:
+            a.update(user.to_dict(photo_req=True))
+        else:
+            a['photo'] = '/static/profiles/NoPhoto.jpg'
+    return a
+
+
+def verify_curr_admin(a=None):
+    a = a if a else get_authorization()
+    if a and a['id'] and int(a['id']) == ADMIN_ID and a['login'] == ADMIN_LOGIN and \
+            a['password'] == ADMIN_PASSWORD:
+        return True
+    return False
+
+
+def verify_authorization(admin=False, a=None):
+    if admin and verify_curr_admin():
+        return True
+    a = a if a else get_authorization()
+    try:
+        user = UserModel.query.filter_by(id=a['id']).first()
+        if user and a['login'] == user.login and \
+                check_password_hash(user.password, a['password']):
+            return True
+        sign_out()
+        return False
+    except:
+        sign_out()
+        return False
+
+
+def get_folder(goods, sl=True, category=None):
+    name = "_".join(goods.name[:10].split())
+    category = (category if category else goods.category).strip(' /')
+    return 'static/goods/{}/{}'.format(category, name) + ('/' if sl else '')
+
+
+def get_api_params(r):
+    params = dict()
+    if len(r) > 1:
+        try:
+            for i in (p.split('=') for p in r[1].split('&')):
+                params[i[0]] = i[1]
+        except:
+            pass
+    return params
 
 
 class GoodsModel(db.Model):
@@ -136,6 +195,7 @@ class UserModel(db.Model):
     password = db.Column(db.String(200), nullable=False)
     subscription = db.Column(db.SMALLINT, default=1)
     photo = db.Column(db.String(100), default="NoPhoto.jpg")
+    basket = db.Column(db.JSON, default={'basket': []})
 
     def __repr__(self):
         return '<UserModel {} {} {} {}>'.format(self.id, self.login, self.name, self.surname)
@@ -166,7 +226,7 @@ class UserModel(db.Model):
 class DataTemplate:
     def get_data(self, tmp_a=None, base_req=False, main_req=False,
                  lk_req=False, lk_admin_req=False, reg_req=False,
-                 edit_goods_req=False):
+                 edit_goods_req=False, basket_req=False, order_req=False):
         data = dict()
         try:
             if base_req:
@@ -187,15 +247,23 @@ class DataTemplate:
                 data['errors'].update(t['errors'])
             if edit_goods_req:
                 data['errors'].update(self.get_edit_goods_data()['errors'])
+            if basket_req:
+                data.update(self.get_basket_data(tmp_a))
+            if order_req:
+                data.update(self.get_order_data(tmp_a))
             return data
         except Exception as e:
             print("Data template get Error:\t", e)
-            return
+            return None
 
-    def get_base_data(self):
+    def get_base_data(self, anyway=False):
         try:
+            api_response = basketAPI.get(['curr'])
+            basket = [[int(k) for k in g][0] for g in api_response['basket']] if api_response['success'] else []
+            len_basket = len(api_response['basket']) if api_response['success'] else None
             return {'menu_items': [c.to_dict() for c in CategoryModel.query.all()],
-                    'basket': get_basket(),
+                    'len_basket': len_basket,
+                    'basket': basket,
                     'errors': {'authorization': {'password': None,
                                                  'login': None,
                                                  'other': None,
@@ -205,6 +273,17 @@ class DataTemplate:
                     }
         except Exception as e:
             print("Get base data template Error: ", e)
+            if anyway:
+                return {'menu_items': [],
+                        'len_basket': None,
+                        'basket': [],
+                        'errors': {'authorization': {'password': None,
+                                                     'login': None,
+                                                     'other': None,
+                                                     'any': False}},
+                        'last': {'authorization': {'password': '',
+                                                   'login': ''}}
+                        }
 
     def get_main_data(self):
         try:
@@ -222,9 +301,9 @@ class DataTemplate:
     def get_lk_data(self, tmp_a=None):
         try:
             user_id = (tmp_a if tmp_a else get_authorization())['id']
-            response = userAPI.get([user_id], a=tmp_a)
-            if response['success']:
-                return {'user': response['user'],
+            api_response = userAPI.get([user_id], a=tmp_a)
+            if api_response['success']:
+                return {'user': api_response['user'],
                         'errors': {'change_profile_info': {'name': None,
                                                            'surname': None,
                                                            'email': None,
@@ -235,11 +314,12 @@ class DataTemplate:
         except Exception as e:
             print("Get lk data template Error: ", e)
 
-    def get_lk_admin_data(self, tmp_a=None):
+    def get_lk_admin_data(self, a=None):
         try:
-            goods_response = goodsAPI.get(['all'], tmp_a)
-            orders_response = orderAPI.get(['all'], tmp_a)
-            users_response = userAPI.get(['all'], tmp_a)
+            a = a if a else get_authorization()
+            goods_response = goodsAPI.get(['all'], a)
+            orders_response = orderAPI.get(['all'], a)
+            users_response = userAPI.get(['all'], a)
             data = {'curr_category': 'goods',
                     'goods': goods_response['goods'] if goods_response['success'] else [],
                     'orders': orders_response['orders'] if orders_response['success'] else [],
@@ -282,46 +362,26 @@ class DataTemplate:
                                           'delete_photo': None}}
                 }
 
+    def get_basket_data(self, a=None):
+        a = a if a else get_authorization()
+        if a:
+            try:
+                api_response = basketAPI.get(['curr'])
+                basket = [[(int(i), int(g[i])) for i in g][0] for g in api_response['basket']]
+                goods = [goodsAPI.get([g[0]])['data']['goods'] for g in basket]
+                for i in range(len(goods)):
+                    goods[i]['count'] = basket[i][1]
+                if api_response['success']:
+                    return {'basket_data': {'goods': goods,
+                                            'total': sum(g['price'] for g in goods)
+                                            }
+                            }
+            except Exception as e:
+                print("Get basket data template Error: ", e)
+                return {}
 
-def get_authorization(tmp_id=None, tmp_login=None, tmp_password=None, img=False):
-    a = {'id': tmp_id if tmp_id else request.cookies.get('userID'),
-         'login': tmp_login if tmp_login else request.cookies.get('userLogin'),
-         'password': tmp_password if tmp_password else request.cookies.get('userPassword')}
-    if img and a['id']:
-        user = UserModel.query.filter_by(id=a['id']).first()
-        if user:
-            a.update(user.to_dict(photo_req=True))
-        else:
-            a['photo'] = '/static/profiles/NoPhoto.jpg'
-    return a
-
-
-def verify_curr_admin(a=None):
-    a = a if a else get_authorization()
-    if a and a['id'] and int(a['id']) == ADMIN_ID and a['login'] == ADMIN_LOGIN and \
-            a['password'] == ADMIN_PASSWORD:
-        return True
-    return False
-
-
-def verify_authorization(admin=False, a=None):
-    if admin and verify_curr_admin():
-        return True
-    a = a if a else get_authorization()
-    try:
-        user = UserModel.query.filter_by(id=a['id']).first()
-        if user and a['login'] == user.login and \
-                check_password_hash(user.password, a['password']):
-            return True
-        sign_out()
-        return False
-    except:
-        sign_out()
-        return False
-
-
-def get_basket():
-    return []
+    def get_order_data(self, a=None):
+        return {}
 
 
 class Authorization(Resource):
@@ -437,15 +497,8 @@ class Authorization(Resource):
 
 class User(Resource):
     def get(self, r, a=None):
-        params = dict()
-        if len(r) > 2:
-            return make_success(False, message='Bad request')
-        if len(r) == 2:
-            try:
-                for i in (p.split('=') for p in r[1].split('&')):
-                    params[i[0]] = i[1]
-            except:
-                pass
+        params = get_api_params(r)
+        a = a if a else get_authorization()
 
         if type(r[0]) is int or str(r[0]).isdigit():
             user_id = int(r[0])
@@ -454,7 +507,6 @@ class User(Resource):
             if not user:
                 return make_success(False, message="User {} doesn't exist".format(user_id))
             # проверка на собственника учетной записи / админа
-            a = a if a else get_authorization()
             if not (verify_curr_admin(a) or (int(a['id']) == user_id and verify_authorization(a=a))):
                 return make_success(False, message="Access Error")
             return make_success(user=user.to_dict(all_req=True))
@@ -472,15 +524,8 @@ class User(Resource):
         return make_success(False, message='Bad request')
 
     def put(self, r, a=None, request_data=None):
-        params = dict()
-        if len(r) > 2:
-            return make_success(False, message='Bad request')
-        if len(r) == 2:
-            try:
-                for i in (p.split('=') for p in r[1].split('&')):
-                    params[i[0]] = i[1]
-            except:
-                pass
+        params = get_api_params(r)
+        a = a if a else get_authorization()
 
         if type(r[0]) is int or str(r[0]).isdigit():
             errors = {'name': None,
@@ -503,17 +548,16 @@ class User(Resource):
                     return make_success(False, message="User {} doesn't exist".format(user_id))
 
                 # проверка на собственника учетной записи / админа
-                a = a if a else get_authorization()
                 if not (verify_curr_admin(a) or (int(a['id']) == user_id and verify_authorization(a=a))):
                     return make_success(False, message="Access Error")
 
                 if 'photo' in args and args['photo']:
                     photo_name = None
                     try:
-                        ext = args['photo'][0].filename.split('.')[-1]
+                        ext = args['photo'].filename.split('.')[-1]
                         if ext.lower() in ['png', 'jpg', 'jpeg']:
                             photo_name = '{}.{}'.format(user.id, 'png')
-                            args['photo'][0].save('static/profiles/' + photo_name)
+                            args['photo'].save('static/profiles/' + photo_name)
                             user.photo = photo_name
                             db.session.commit()
                         else:
@@ -568,20 +612,12 @@ class User(Resource):
         return make_success(False, 'Bad request')
 
     def delete(self, r, a=None):
-        params = dict()
-        if len(r) > 2:
-            return make_success(False, message='Bad request')
-        if len(r) == 2:
-            try:
-                for i in (p.split('=') for p in r[1].split('&')):
-                    params[i[0]] = i[1]
-            except:
-                pass
+        params = get_api_params(r)
+        a = a if a else get_authorization()
 
         if type(r[0]) is int or str(r[0]).isdigit():
             user_id = int(r[0])
             # проверка на собственника учетной записи / админа
-            a = a if a else get_authorization()
             if not (verify_curr_admin(a) or (int(a['id']) == user_id and verify_authorization(a=a))):
                 return make_success(False, message="Access Error")
             try:
@@ -603,15 +639,8 @@ class User(Resource):
 
 class Goods(Resource):
     def get(self, r, a=None):
-        params = dict()
-        if len(r) > 2:
-            return make_success(False, message='Bad request')
-        if len(r) == 2:
-            try:
-                for i in (p.split('=') for p in r[1].split('&')):
-                    params[i[0]] = i[1]
-            except:
-                pass
+        params = get_api_params(r)
+        a = a if a else get_authorization(params=params)
 
         # полная информация об одном товаре
         if type(r[0]) is int or str(r[0]).isdigit():
@@ -634,7 +663,7 @@ class Goods(Resource):
             if verify_curr_admin(a):
                 try:
                     return make_success(goods=[i.to_dict(full_link_req=True, short_description_req=True)
-                                               for i in GoodsModel.query.all()])
+                                               for i in reversed(GoodsModel.query.all())])
                 except Exception as e:
                     print("GoodsAPI Error (get all): ", e)
                     return make_success(False, message='Server Error')
@@ -659,11 +688,17 @@ class Goods(Resource):
         category = CategoryModel.query.filter_by(name=str(r[0]).lower()).first()
         if category:
             try:
+                goods = GoodsModel.query.all()
+                if 'sort' in params:
+                    if params['sort'] == 'NEW':
+                        goods.sort(key=lambda g: g.id, reverse=True)
+                    elif params['sort'] == 'CHE':
+                        goods.sort(key=lambda g: int(g.price))
+                    elif params['sort'] == 'EXP':
+                        goods.sort(key=lambda g: int(g.price), reverse=True)
                 return make_success(goods=[i.to_dict(full_link_req=True,
                                                      card_description_req=True,
-                                                     photo_req=True)
-                                           for i in GoodsModel.query.all()
-                                           ],
+                                                     photo_req=True) for i in goods],
                                     category=category.to_dict())
             except Exception as e:
                 print("GoodsAPI Error (get category {}): ".format(r[0]), e)
@@ -672,15 +707,8 @@ class Goods(Resource):
         return make_success(False, message='Bad request')
 
     def post(self, r, a=None, request_data=None):
-        params = dict()
-        if len(r) > 2:
-            return make_success(False, message='Bad request')
-        if len(r) == 2:
-            try:
-                for i in (p.split('=') for p in r[1].split('&')):
-                    params[i[0]] = i[1]
-            except:
-                pass
+        params = get_api_params(r)
+        a = a if a else get_authorization(params=params)
 
         if str(r[0]).lower() == 'new':
             if not verify_curr_admin(a):
@@ -717,15 +745,19 @@ class Goods(Resource):
 
                 # длина полей (для базы данных)
                 if len(args['name']) > 80:
-                    errors['name'] = "Название должно быть не более 80 символов."
+                    errors['name'] = "Название ({}) должно быть не более 80 символов.".format(len(args['name']))
                 if len(args['description']) > 15000:
-                    errors['description'] = "Описание должно быть не более 15000 символов."
+                    errors['description'] = "Описание ({}) должно " \
+                                            "быть не более 15000 символов.".format(len(args['description']))
                 if len(args['short_description']) > 120:
-                    errors['short_description'] = "Краткое описание должно быть не более 120 символов."
+                    errors['short_description'] = "Краткое описание ({}) должно " \
+                                                  "быть не более 120 символов.".format(len(args['short_description']))
                 if len(args['category']) > 150:
-                    errors['category'] = "Категория не должна превышать 150 символов."
+                    errors['category'] = "Категория ({}) не должна " \
+                                         "превышать 150 символов.".format(len(args['category']))
                 if len(args['rus_category']) > 150:
-                    errors['rus_category'] = "Категория не должна превышать 150 символов."
+                    errors['rus_category'] = "Категория ({}) не должна " \
+                                             "превышать 150 символов.".format(len(args['rus_category']))
 
                 # содержание запрещенных символов
                 if '/' in args['name']:
@@ -764,15 +796,8 @@ class Goods(Resource):
         return make_success(False, message='Bad request')
 
     def put(self, r, a=None, request_data=None):
-        params = dict()
-        if len(r) > 2:
-            return make_success(False, message='Bad request')
-        if len(r) == 2:
-            try:
-                for i in (p.split('=') for p in r[1].split('&')):
-                    params[i[0]] = i[1]
-            except:
-                pass
+        params = get_api_params(r)
+        a = a if a else get_authorization(params=params)
 
         if type(r[0]) is int or str(r[0]).isdigit():
             errors = D.get_edit_goods_data()['errors']['edit_goods']
@@ -794,7 +819,6 @@ class Goods(Resource):
                     return make_success(False, message="Goods {} doesn't exist".format(goods_id))
 
                 # проверка на / админа
-                a = a if a else get_authorization()
                 if not verify_curr_admin(a):
                     return make_success(False, message="Access Error")
 
@@ -824,24 +848,28 @@ class Goods(Resource):
                         if len(args['category']) > 150:
                             errors['category'] = "Категория должна быть не более 150 символов."
                         else:
-                            old_category = CategoryModel.query.filter_by(name=goods_category).first()
+                            old_category = CategoryModel.query.filter_by(name=goods.category).first()
                             rus_category = old_category.rus_name
-                            if args['rus_category']:
+                            if args['rus_category'] != rus_category:
                                 if len(args['rus_category']) > 150:
                                     errors['rus_category'] = "Категория должна быть не более 150 символов."
                                 else:
-                                    rus_category = args['rus_caetgory']
+                                    rus_category = args['rus_category']
                             new_category = CategoryModel(name=args['category'], rus_name=rus_category)
 
                             try:
                                 new_folder = get_folder(goods, category=new_category.name, sl=False)
                                 old_folder = get_folder(goods, category=old_category.name, sl=False)
-                                makedirs(new_folder)
+                                if not path.exists(new_folder):
+                                    makedirs(new_folder)
                                 if path.exists(old_folder):
                                     for item in listdir(old_folder):
                                         copyfile(old_folder + '/' + item, new_folder + '/' + item)
                                         remove(old_folder + '/' + item)
                                     rmdir(old_folder)
+                                    old_category_folder = "/".join(old_folder.split('/')[:-1])
+                                    if not listdir(old_category_folder):
+                                        rmdir(old_category_folder)
                             except Exception as e:
                                 print("GoodsAPI Error (move goods folder): ", e)
 
@@ -850,6 +878,9 @@ class Goods(Resource):
                                 makedirs(folder)
                                 print("GoodsAPI Error (unknown, move folder) - done!")
 
+                            if len(GoodsModel.query.filter_by(category=old_category.name).all()) == 1:
+                                db.session.delete(old_category)
+                                db.session.commit()
                             db.session.add(new_category)
                             db.session.commit()
                             goods.category = args['category']
@@ -863,6 +894,7 @@ class Goods(Resource):
                         category = CategoryModel.query.filter_by(name=goods.category).first()
                         if args['rus_category'] != category.rus_name:
                             category.rus_name = args['rus_category']
+                            db.session.commit()
                     except:
                         errors['rus_category'] = "Некорректные данные"
 
@@ -913,10 +945,12 @@ class Goods(Resource):
                 # удаление фото
                 if args['delete_photo']:
                     try:
-                        if args['delete_photo'] != NO_GOODS_PHOTO.strip('/'):
+                        if args['delete_photo'].strip('/') != NO_GOODS_PHOTO.strip('/'):
                             remove(args['delete_photo'])
                             photos = goods.photos.split(';')
-                            photos.remove(args['delete_photo'].split('/')[-1])
+                            photo = args['delete_photo'].split('/')[-1]
+                            for i in range(photos.count(photo)):
+                                photos.remove(photo)
                             goods.photos = ";".join(photos) if photos else NO_GOODS_PHOTO
                             db.session.commit()
                     except Exception as e:
@@ -928,8 +962,11 @@ class Goods(Resource):
                     try:
                         if type(args['add_photo']) is not list:
                             args['add_photo'] = [args['add_photo']]
+                        goods_photos = goods.photos.split(';')
                         for i in range(len(args['add_photo'])):
                             photo = args['add_photo'][i]
+                            if photo.filename in goods_photos:
+                                continue
                             try:
                                 ext = photo.filename.split('.')[-1]
                                 if ext.lower() in ['png', 'jpg', 'jpeg']:
@@ -939,9 +976,10 @@ class Goods(Resource):
                                     photo.save('{}/{}'.format(folder, photo.filename))
                                     photos = goods.photos.split(';')
                                     if len(photos) == 1 and photos[0] == NO_GOODS_PHOTO:
-                                        goods.photos = photo.filename
+                                        goods_photos = [photo.filename]
                                     else:
-                                        goods.photos = goods.photos.strip(';') + ';' + photo.filename
+                                        goods_photos.append(photo.filename)
+                                    goods.photos = ";".join(goods_photos)
                                     db.session.commit()
                                 else:
                                     raise TypeError
@@ -965,19 +1003,11 @@ class Goods(Resource):
         return make_success(False, 'Bad request')
 
     def delete(self, r, a=None):
-        params = dict()
-        if len(r) > 2:
-            return make_success(False, message='Bad request')
-        if len(r) == 2:
-            try:
-                for i in (p.split('=') for p in r[1].split('&')):
-                    params[i[0]] = i[1]
-            except:
-                pass
+        params = get_api_params(r)
+        a = a if a else get_authorization(params=params)
 
         if type(r[0]) is int or str(r[0]).isdigit():
             # проверка на админа
-            a = a if a else get_authorization()
             if not verify_curr_admin(a):
                 return make_success(False, message="Access Error")
 
@@ -1001,17 +1031,112 @@ class Goods(Resource):
         return make_success(False, message='Bad request')
 
 
+class Bassket(Resource):
+    def get(self, r, a=None):
+        params = get_api_params(r)
+        a = a if a else get_authorization(params=params)
+
+        if r[0] == 'curr':
+            try:
+                if a:
+                    user = UserModel.query.filter_by(id=a['id']).first()
+                    if not user:
+                        return make_success(False, message="User not found")
+                    return make_success(basket=user.basket['basket'])
+                return make_success(False, "Authorization error")
+            except Exception as e:
+                print("BassketAPI Error (get): ", e)
+                return make_success(False, message='Server Error')
+
+        return make_success(False, message='Bad request')
+
+    def post(self, r, a=None):
+        params = get_api_params(r)
+        a = a if a else get_authorization(params=params)
+
+        if type(r[0]) is int or str(r[0]).isdigit():
+            try:
+                if not GoodsModel.query.filter_by(id=r[0]).first():
+                    return make_success(False, message="Goods doesn't exist")
+                if a:
+                    user = UserModel.query.filter_by(id=a['id']).first()
+                    if not user:
+                        return make_success(False, message="User not found")
+                    if r[0] in [[k for k in g][0] for g in user.basket['basket']]:
+                        return make_success(False, message="Goods has already added")
+                    basket = user.basket['basket'][:]
+                    basket.append({str(r[0]): (int(params['count']) if 'count' in params else 1)})
+                    user.basket = {"basket": basket}
+                    db.session.commit()
+                    return make_success()
+                return make_success(False, "Authorization error")
+            except Exception as e:
+                print("BassketAPI Error (add): ", e)
+                return make_success(False, message='Server Error')
+
+        return make_success(False, message='Bad request')
+
+    def put(self, r, a=None):
+        params = get_api_params(r)
+        a = a if a else get_authorization(params=params)
+
+        if type(r[0]) is int or str(r[0]).isdigit():
+            try:
+                if not GoodsModel.query.filter_by(id=r[0]).first():
+                    return make_success(False, message="Goods doesn't exist")
+                if a:
+                    user = UserModel.query.filter_by(id=a['id']).first()
+                    if not user:
+                        return make_success(False, message="User not found")
+                    names = [[k for k in g][0] for g in user.basket['basket']]
+                    if r[0] not in names:
+                        return make_success(False, message="Goods is not in basket")
+                    if 'count' in params and params['count'].isdigit() and int(params['count']) > 0:
+                        basket = deepcopy(user.basket['basket'])
+                        basket[names.index(r[0])][r[0]] = int(params['count'])
+                        user.basket = {'basket': basket}
+                    else:
+                        return make_success(False, "Count error")
+                    db.session.commit()
+                    return make_success()
+                return make_success(False, "Authorization error")
+            except Exception as e:
+                print("BassketAPI Error (edit): ", e)
+                return make_success(False, message='Server Error')
+
+        return make_success(False, message='Bad request')
+
+    def delete(self, r, a=None):
+        params = get_api_params(r)
+        a = a if a else get_authorization(params=params)
+
+        if type(r[0]) is int or str(r[0]).isdigit():
+            try:
+                if not GoodsModel.query.filter_by(id=r[0]).first():
+                    return make_success(False, message="Goods doesn't exist")
+                if a:
+                    user = UserModel.query.filter_by(id=a['id']).first()
+                    if not user:
+                        return make_success(False, message="User not found")
+                    names = [[k for k in g][0] for g in user.basket['basket']]
+                    if r[0] not in names:
+                        return make_success(False, message="Goods is not in basket")
+                    basket = user.basket['basket'][:]
+                    del basket[names.index(r[0])]
+                    user.basket = {'basket': basket}
+                    db.session.commit()
+                    return make_success()
+                return make_success(False, "Authorization error")
+            except Exception as e:
+                print("BassketAPI Error (delete): ", e)
+                return make_success(False, message='Server Error')
+
+        return make_success(False, message='Bad request')
+
+
 class Order(Resource):
     def get(self, r, a=None):
-        params = dict()
-        if len(r) > 2:
-            return make_success(False, message='Bad request')
-        if len(r) == 2:
-            try:
-                for i in (p.split('=') for p in r[1].split('&')):
-                    params[i[0]] = i[1]
-            except:
-                pass
+        params = get_api_params(r)
 
         if str(r[0]).lower() == 'all':
             if not verify_curr_admin(a):
@@ -1025,15 +1150,8 @@ class Order(Resource):
         return make_success(False, message='Bad request')
 
     def delete(self, r, a=None):
-        params = dict()
-        if len(r) > 2:
-            return make_success(False, message='Bad request')
-        if len(r) == 2:
-            try:
-                for i in (p.split('=') for p in r[1].split('&')):
-                    params[i[0]] = i[1]
-            except:
-                pass
+        params = get_api_params(r)
+        a = a if a else get_authorization()
 
         if type(r[0]) is int or str(r[0]).isdigit():
             try:
@@ -1041,7 +1159,6 @@ class Order(Resource):
                 order = OrderModel.query.filter_by(id=order_id).first()
                 if order:
                     # проверка на собственника учетной записи / админа
-                    a = a if a else get_authorization()
                     if not (verify_curr_admin(a) or (int(a['id']) == order.user_id and verify_authorization(a=a))):
                         return make_success(False, message="Access Error")
                     db.session.delete(order)
@@ -1055,15 +1172,8 @@ class Order(Resource):
         return make_success(False, message='Bad request')
 
     def put(self, r, a=None):
-        params = dict()
-        if len(r) > 2:
-            return make_success(False, message='Bad request')
-        if len(r) == 2:
-            try:
-                for i in (p.split('=') for p in r[1].split('&')):
-                    params[i[0]] = i[1]
-            except:
-                pass
+        params = get_api_params(r)
+        a = a if a else get_authorization()
 
         if type(r[0]) is int or str(r[0]).isdigit():
             try:
@@ -1072,7 +1182,6 @@ class Order(Resource):
                     order = OrderModel.query.filter_by(id=order_id).first()
                     if order:
                         # проверка на админа
-                        a = a if a else get_authorization()
                         if not verify_curr_admin(a):
                             return make_success(False, message="Access Error")
                         order.status = params['status']
@@ -1098,26 +1207,56 @@ def re_restore():
         if 'sign-in' in request.form:
             return sign_in('index.html', t, data)
 
+        if 'addToBasket' in request.form:
+            api_response = basketAPI.post([request.form['addToBasketGoodsID']])
+            if not api_response['success']:
+                print("Add to basket error: ", api_response['message'])
+            else:
+                new_data = D.get_base_data()
+                data['len_basket'] = new_data['len_basket']
+                data['basket'] = new_data['basket']
+            return render('index.html', title=t, data=data)
+
 
 @app.route('/re_restore/<string:category>', methods=["GET", "POST"])
 def goods_category(category):
     data = D.get_base_data()
-    api_response = goodsAPI.get([category])
+    data['sorting'] = request.cookies.get('sorting')
+    if not data['sorting']:
+        data['sorting'] = 'NEW'
+    api_response = goodsAPI.get([category, 'sort=' + data['sorting']])
     if api_response['success']:
         data['goods'] = api_response['goods']
-        data['category'] = api_response['category']
-    sorting = request.cookies.get('sorting')
+        data['full_category'] = api_response['category']
+
+    t = api_response['category']['rus_name']
 
     if request.method == "GET":
-        return render('goods-category.html', title=api_response['category']['rus_name'], data=data)
+        return render('goods-category.html', title=t, data=data)
 
+    form = get_request_data()
     if request.method == "POST":
-        if 'sign-in' in request.form:
+        if 'sign-in' in form:
             return sign_in('goods-category.html', 'Вход', data)
 
-        if 'sorting' in request.form:
-            data['sorting'] = request.form['sorting']
-            render('goods-category.html', title=api_response['category']['rus_name'], data=data)
+        if 'addToBasket' in form:
+            api_response = basketAPI.post([form['addToBasketGoodsID']])
+            if not api_response['success']:
+                print("Add to basket error: ", api_response['message'])
+            else:
+                new_data = D.get_base_data()
+                data['len_basket'] = new_data['len_basket']
+                data['basket'] = new_data['basket']
+            return render('goods-category.html', title=t, data=data)
+
+        if 'sorting' in form:
+            data['sorting'] = form['sorting']
+            api_response = goodsAPI.get([category, 'sort=' + data['sorting']])
+            if api_response['success']:
+                data['goods'] = api_response['goods']
+            resp = make_response(render('goods-category.html', title=t, data=data))
+            resp.set_cookie('sorting', form['sorting'])
+            return resp
 
 
 @app.route('/re_restore/<string:category>/<int:goods_id>', methods=["GET", "POST"])
@@ -1145,21 +1284,28 @@ def full_goods(category, goods_id):
             return sign_in('goods.html', t, data)
 
         if 'addToBasket' in form:
-            # add_to_basket(request.form)
-            pass
+            api_response = basketAPI.post([form['addToBasketGoodsID']])
+            if not api_response['success']:
+                print("Add to basket error: ", api_response['message'])
+            else:
+                new_data = D.get_base_data()
+                data['len_basket'] = new_data['len_basket']
+                data['basket'] = new_data['basket']
+            return render('goods.html', title=t, data=data)
 
         if curr_admin:
-            api_response = goodsAPI.put([goods_id], request_data=form)
-            if api_response['success']:
-                data['errors']['edit_goods'].update(api_response['errors'])
+            if {'changeBtn', 'btnAddPhoto', 'delete_photo'} & set(form.keys()):
+                api_response = goodsAPI.put([goods_id], request_data=form)
+                if api_response['success']:
+                    data['errors']['edit_goods'].update(api_response['errors'])
 
-                api_response = goodsAPI.get([goods_id])
-                if not api_response['success']:
-                    return error(message=api_response['message'])
-                data.update(api_response['data'])
+                    api_response = goodsAPI.get([goods_id])
+                    if not api_response['success']:
+                        return error(message=api_response['message'])
+                    data.update(api_response['data'])
 
-                return render('goods-admin.html', title=t, data=data)
-            return server_error()
+                    return render('goods-admin.html', title=t, data=data)
+                return server_error()
 
 
 def sign_in(page, t, data, ready_data=None):
@@ -1178,6 +1324,9 @@ def sign_in(page, t, data, ready_data=None):
                 page = 'lk.html'
         if not data:
             return error()
+        if page == 'goods.html' and verify_curr_admin(a):
+            data['errors'].update(D.get_edit_goods_data()['errors'])
+            page = 'goods-admin.html'
         resp = make_response(render(page, a=a, title=t, data=data))
         resp.set_cookie('userID', str(a['id']))
         resp.set_cookie('userLogin', str(a['login']))
@@ -1319,8 +1468,36 @@ def lk_admin():
     return redirect(HOME)
 
 
+@app.route('/basket', methods=["GET", "POST"])
+def user_basket():
+    t = "Корзина"
+    if request.method == "POST":
+        form = get_request_data()
+        if 'editCountGoodsBtn' in form:
+            api_response = basketAPI.put([form['editCountGoodsBtn'], "count=" + form['countGoods']])
+            if not api_response['success']:
+                print("Basket edit count goods error: ", api_response['message'])
+
+        if 'deleteGoodsBtn' in form:
+            api_response = basketAPI.delete([form['deleteGoodsBtn']])
+            if not api_response['success']:
+                print("Basket delete goods error: ", api_response['message'])
+
+    data = D.get_data(base_req=True, basket_req=True)
+    if 'basket_data' in data:
+        return render("basket.html", title=t, data=data)
+    return access_error()
+
+
+@app.route('/make-order', methods=["GET", "POST"])
+def make_order():
+    t = "Оформление заказа"
+    data = D.get_data(base_req=True, order_req=True)
+    return render("order.html", title=t, data=data)
+
+
 def error(err=520, message='Что-то пошло не так :('):
-    data = D.get_data(base_req=True)
+    data = D.get_base_data(anyway=True)
     data.update({'message': message, 'type': err})
     return render('error.html', data=data)
 
@@ -1368,7 +1545,7 @@ def get_request_data(files=False):
     if files:
         form.update(dict(request.files))
     for i in form:
-        if type(form[i]) is list and i not in ['photo', 'photos', 'add_photo']:
+        if type(form[i]) is list and i != 'add_photo':
             form[i] = form[i][-1]
     return form
 
@@ -1385,6 +1562,7 @@ ADMIN_PASSWORD = "admin"
 # Все API
 userAPI = User()
 goodsAPI = Goods()
+basketAPI = Bassket()
 orderAPI = Order()
 authorizationAPI = Authorization()
 
@@ -1396,6 +1574,7 @@ if __name__ == '__main__':
     api.add_resource(Authorization, '/authorization')
     api.add_resource(User, '/users/<path:r>')
     api.add_resource(Goods, '/goods/<path:r>')
+    api.add_resource(Bassket, '/basket/<path:r>')
     api.add_resource(Order, '/order/<path:r>')
 
     app.run(port=PORT, host=HOST)
