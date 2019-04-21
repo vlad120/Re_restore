@@ -248,7 +248,9 @@ class DataTemplate:
             if edit_goods_req:
                 data['errors'].update(self.get_edit_goods_data()['errors'])
             if basket_req:
-                data.update(self.get_basket_data(tmp_a))
+                t = self.get_basket_data(tmp_a)
+                data['basket_data'] = t['basket_data']
+                data['errors']['basket'] = t['errors']['basket']
             if order_req:
                 data.update(self.get_order_data(tmp_a))
             return data
@@ -373,8 +375,9 @@ class DataTemplate:
                     goods[i]['count'] = basket[i][1]
                 if api_response['success']:
                     return {'basket_data': {'goods': goods,
-                                            'total': sum(g['price'] for g in goods)
-                                            }
+                                            'total': sum(g['price'] * g['count'] for g in goods)
+                                            },
+                            'errors': {'basket': {'order': None}}
                             }
             except Exception as e:
                 print("Get basket data template Error: ", e)
@@ -653,7 +656,8 @@ class Goods(Resource):
                                                                  short_description_req=True,
                                                                  photos_req=True,
                                                                  count_req=True,
-                                                                 full_category_req=True)})
+                                                                 full_category_req=True,
+                                                                 full_link_req=True)})
             except Exception as e:
                 print("GoodsAPI Error (get {}): ".format(goods_id), e)
                 return make_success(False, message='Server Error')
@@ -1484,9 +1488,9 @@ def user_basket():
                 print("Basket delete goods error: ", api_response['message'])
 
     data = D.get_data(base_req=True, basket_req=True)
-    if 'basket_data' in data:
-        return render("basket.html", title=t, data=data)
-    return access_error()
+    if 'basket_data' not in data:
+        return access_error()
+    return render("basket.html", title=t, data=data)
 
 
 @app.route('/make-order', methods=["GET", "POST"])
