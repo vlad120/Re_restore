@@ -111,7 +111,7 @@
                                 <div class="card-body">
                                     <ul class="list-group list-group-horizontal-sm">
                                         {% for g in item['goods'] %}
-                                            <li class="list-group-item"><a href="{{ g['about']['full_link'] }}">{{ g['about']['id'] }}</a> - {{ g['about']['price'] }}руб * {{ g['count']}}шт</li>
+                                            <li class="list-group-item"><a href="{{ g['full_link'] }}">{{ g['id'] }}</a> - {{ g['price'] }}руб * {{ g['count']}}шт</li>
                                         {% endfor %}
 
                                     </ul>

@@ -36,15 +36,9 @@
         .card-image {
             height: 150px;
         }
-        .order-error {
-            margin-left: 70px;
-            font-size: 14px;
-            color: orangered;
-            margin-bottom: 5px;
-        }
         .total-line {
             border-bottom: 2px dashed;
-            width: 550px;
+            width: 600px;
             margin-left: 0;
             margin-top: 30px;
         }
@@ -81,13 +75,8 @@
                 </div>
             {% endfor %}
             <hr class="total-line">
-            {% if data['errors']['basket']['order'] %}
-                <p class="order-error">{{ data['errors']['basket']['order'] }}</p>
-            {% endif %}
             <h3 style="margin-left: 30px;" class="one-line"><b>Итого: <span style="color: darkgreen;">{{ data['basket_data']['total'] }}₽</span></b></h3>
-            <form method="post" class="one-line">
-                <a href="/make_order" class="btn btn-success" style="margin-left: 20px; margin-top: -10px;">Сделать заказ</a>
-            </form>
+            <a href="/make-order" class="btn btn-success one-line" style="margin-left: 20px; margin-top: -10px;">Перейти к оформлению</a>
         {% else %}
             <h3 style="margin-left: 40px; color: cornflowerblue;"><b><i>Здесь пока ничего нет ;)</i></b></h3>
         {% endif %}

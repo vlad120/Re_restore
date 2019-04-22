@@ -55,12 +55,13 @@
             font-family: Helvetica;
         }
         .change-goods-error {
-            margin-left: 25px;
+            margin-left: 16px;
             font-size: 14px;
             color: orangered;
             margin-top: 5px;
             margin-bottom: 5px;
         }
+        .btn-lg { margin-top: 7px; }
         .btn-save { margin-bottom: 14px; }
         pre { white-space: pre-wrap; }
         hr { margin-right: 16px; }
@@ -82,50 +83,51 @@
             <p class="change-goods-error">{{ data['errors']['edit_goods']['category'] }}</p>
         {% endif %}
 
-        <input type="text" class="form-control content base-title" placeholder="Название"
+        <input type="text" class="form-control content base-title one-line" placeholder="Название"
                name="name" value="{{ data['goods']['name'] }}">
+        <button type="submit" class="btn btn-info btn-lg btn-save one-line content" name="changeBtn">Сохранить</button>
         {% if data['errors']['edit_goods']['name'] %}
             <p class="change-goods-error">{{ data['errors']['edit_goods']['name'] }}</p>
         {% endif %}
+    </form>
 
-        <div class="photos-place one-line content">
-            {% for photo in data['goods']['photos'] %}
-                <img src="{{ photo }}" alt="Ошибка загрузки..." class="goods-photo content">
-                <button type="submit" class="btn btn-link" name="delete_photo" value="{{ photo }}">Удалить</button>
-            {% endfor %}
-        </div>
+    <form method="post" class="photos-place one-line content">
+        {% for photo in data['goods']['photos'] %}
+            <img src="{{ photo }}" alt="Ошибка загрузки..." class="goods-photo content">
+            <button type="submit" class="btn btn-link" name="delete_photo" value="{{ photo }}">Удалить</button>
+        {% endfor %}
+    </form>
 
-        <div class="card one-line main-card">
-            <div class="card-body">
-                <div class="input-group mb-3">
-                    <input type="number" class="form-control" placeholder="Цена" aria-describedby="ruble"
-                           name="price" value="{{ data['goods']['price'] }}">
-                    <div class="input-group-append">
-                        <span class="input-group-text" id="ruble">₽</span>
-                    </div>
+    <form method="post" class="one-line card main-card">
+        <div class="card-body">
+            <div class="input-group mb-3">
+                <input type="number" class="form-control" placeholder="Цена" aria-describedby="ruble"
+                       name="price" value="{{ data['goods']['price'] }}">
+                <div class="input-group-append">
+                    <span class="input-group-text" id="ruble">₽</span>
                 </div>
-                {% if data['errors']['edit_goods']['price'] %}
-                    <p class="change-goods-error">{{ data['errors']['edit_goods']['price'] }}</p>
-                {% endif %}
-
-                <button type="submit" class="btn btn-info btn-save" name="changeBtn">Готово</button>
-
-                <div class="input-group mb-3" style="width: 50%;">
-                    <input type="number" class="form-control" placeholder="Количество" aria-describedby="count-lbl"
-                           name="count" value="{{ data['goods']['count'] }}">
-                    <div class="input-group-append">
-                        <span class="input-group-text" id="count-lbl">Шт</span>
-                    </div>
-                </div>
-                {% if data['errors']['edit_goods']['count'] %}
-                    <p class="change-goods-error">{{ data['errors']['edit_goods']['count'] }}</p>
-                {% endif %}
-
-                <textarea class="form-control mini-description" placeholder="Мини-описание" name="short_description">{{ data['goods']['short_description'] }}</textarea>
-                {% if data['errors']['edit_goods']['short-description'] %}
-                    <p class="change-goods-error">{{ data['errors']['edit_goods']['short-description'] }}</p>
-                {% endif %}
             </div>
+            {% if data['errors']['edit_goods']['price'] %}
+                <p class="change-goods-error">{{ data['errors']['edit_goods']['price'] }}</p>
+            {% endif %}
+
+            <button type="submit" class="btn btn-info btn-save" name="changeBtn">Сохранить карточку</button>
+
+            <div class="input-group mb-3" style="width: 50%;">
+                <input type="number" class="form-control" placeholder="Количество" aria-describedby="count-lbl"
+                       name="count" value="{{ data['goods']['count'] }}">
+                <div class="input-group-append">
+                    <span class="input-group-text" id="count-lbl">шт</span>
+                </div>
+            </div>
+            {% if data['errors']['edit_goods']['count'] %}
+                <p class="change-goods-error">{{ data['errors']['edit_goods']['count'] }}</p>
+            {% endif %}
+
+            <textarea class="form-control mini-description" placeholder="Мини-описание" name="short_description">{{ data['goods']['short_description'] }}</textarea>
+            {% if data['errors']['edit_goods']['short_description'] %}
+                <p class="change-goods-error">{{ data['errors']['edit_goods']['short_description'] }}</p>
+            {% endif %}
         </div>
     </form>
 
@@ -133,7 +135,7 @@
         <div class="input-group content choose-photo">
             <div class="custom-file">
                 <input type="file" class="custom-file-input" id="inputFile1" aria-describedby="inputGroupFileAddon04" name="add_photo" multiple>
-                <label class="custom-file-label" for="inputFile1">Выберите фото</label>
+                <label class="custom-file-label" for="inputFile1">Фото</label>
             </div>
             <div class="input-group-append">
                 <button class="btn btn-outline-secondary" type="submit" name="btnAddPhoto">Загрузить</button>

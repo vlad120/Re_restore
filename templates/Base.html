@@ -116,7 +116,7 @@
                 <a class="dropdown-item" href="{{ item['link'] }}">{{ item['rus_name'] }}</a>
             {% endfor %}
         </div>
-        {% if authorization['id'] %}
+        {% if authorization['id'] and not authorization['admin_authorization'] %}
             <a href="/basket" class="btn btn-success">Корзина {% if data['len_basket'] %}({{ data['len_basket'] }}){% endif %}</a>
         {% endif %}
     </div>

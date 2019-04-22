@@ -4,6 +4,10 @@
     <style type="text/css">
         .content { margin-left: 16px; }
         .one-line { display: inline-block; }
+        .btn-edit {
+            margin-top: 65px;
+            margin-bottom: -50px;
+        }
         .category-link {
             color: dimgrey;
             margin-top: 65px;
@@ -43,6 +47,9 @@
 
 
 {% block content %}
+    {% if authorization['admin_authorization'] %}
+        <a href="/re_restore/goods-admin/{{ data['goods']['id'] }}" class="btn btn-success btn-edit content" disabled>Редактировать</a>
+    {% endif %}
     <h5 class="content">
         <a href="{{ data['goods']['full_category']['link'] }}"
            class="category-link one-line">/{{ data['goods']['full_category']['rus_name'] }}</a>
