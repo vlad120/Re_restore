@@ -238,6 +238,7 @@ class DataTemplate:
             if lk_req:
                 t = self.get_lk_data(tmp_a)
                 data['user'] = t['user']
+                data['orders'] = t['orders']
                 data['errors'].update(t['errors'])
             if lk_admin_req:
                 t = self.get_lk_admin_data(tmp_a)
@@ -295,8 +296,9 @@ class DataTemplate:
             api_response = goodsAPI.get(['random', '?n=' + interesting_goods])
             if api_response['success']:
                 goods = api_response['goods']
-                return {'slides': ['static/main_banners/{}.png'.format(i + 1) for i in range(4)],
-                        'len_slides': 4,
+                slides = list(filter(lambda f: f != '.DS_Store', listdir("static/main_slides")))
+                return {'slides': ['static/main_slides/{}'.format(slide) for slide in slides],
+                        'len_slides': len(slides),
                         'goods': goods
                         }
         except Exception as e:
@@ -305,15 +307,18 @@ class DataTemplate:
     def get_lk_data(self, a=None):
         try:
             a = a if a else get_authorization()
-            api_response = userAPI.get([a['id']], a=a)
-            if api_response['success']:
-                return {'user': api_response['user'],
+            user_api_response = userAPI.get([a['id']], a=a)
+            order_api_response = orderAPI.get(['user', '?user_id=' + str(a['id'])], a=a)
+            if user_api_response['success'] and order_api_response['success']:
+                return {'user': user_api_response['user'],
+                        'orders': order_api_response['orders'],
                         'errors': {'change_profile_info': {'name': None,
                                                            'surname': None,
                                                            'email': None,
                                                            'check_password': None,
                                                            'new_password': None,
-                                                           'photo': None}},
+                                                           'photo': None},
+                                   'edit_order': None},
                         }
         except Exception as e:
             print("Get lk data template Error: ", e)
@@ -788,10 +793,11 @@ class Goods(Resource):
 
                 # содержание запрещенных символов
                 if '/' in args['name']:
-                    if errors['name']:
-                        errors['name'] += " Название не может содержать символ '/'"
-                    else:
-                        errors['name'] = "Название не может содержать символ '/'"
+                    errors['name'] = "Название не может содержать символ '/'."
+                if '/' in args['category']:
+                    errors['category'] = "Категория не может содержать символ '/'."
+                if '/' in args['rus_category']:
+                    errors['rus_category'] = "Категория не может содержать символ '/'."
 
                 if any(err for err in errors.values()):
                     return make_success(False, message="Too much data", errors=errors)
@@ -823,6 +829,55 @@ class Goods(Resource):
         return make_success(False, message='Bad request')
 
     def put(self, r, a=None, request_data=None):
+        def move_goods(goods, new_category, errors=dict()):
+            e = None
+            try:
+                old_category = CategoryModel.query.filter_by(name=goods.category).first()
+                old_folder = get_folder(goods, category=old_category.name, sl=False)
+                new_folder = get_folder(goods, category=new_category.name, sl=False)
+                if not path.exists(new_folder):
+                    makedirs(new_folder)
+                if path.exists(old_folder):
+                    photos = goods.photos.split(';')
+                    for item in listdir(old_folder):
+                        if item in photos:
+                            copyfile(old_folder + '/' + item, new_folder + '/' + item)
+                            remove(old_folder + '/' + item)
+                    old_folder_items = list(filter(lambda f: f != '.DS_Store',
+                                                   listdir(old_folder)))
+                    if not old_folder_items:
+                        rmdir(old_folder)
+                        old_category_folder = "/".join(old_folder.split('/')[:-1])
+                        old_category_folder_items = list(filter(lambda f: f != '.DS_Store',
+                                                                listdir(old_category_folder)))
+                        if not old_category_folder_items:
+                            rmdir(old_category_folder)
+            except Exception as e:
+                print("GoodsAPI Error "
+                      "(move folder while edit goods {} category): {}".format(goods.id, e))
+                errors['category'] = "Move folder error"
+            if not e:
+                try:
+                    if not path.exists(new_folder):
+                        makedirs(folder)
+                        print("GoodsAPI Error "
+                              "(folder wasn't created while edit goods {} category) - solved!".format(goods.id))
+
+                    if len(GoodsModel.query.filter_by(category=old_category.name).all()) == 1:
+                        db.session.delete(old_category)
+                        db.session.commit()
+                    if not CategoryModel.query.filter_by(name=new_category.name).first():
+                        db.session.add(new_category)
+                        db.session.commit()
+                    goods = GoodsModel.query.filter_by(id=goods_id).first()
+                    goods.category = args['category']
+                    db.session.commit()
+                except Exception as e:
+                    print("GoodsAPI Error "
+                          "(edit goods {} DB category): {}".format(goods.id, e))
+                    errors['category'] = "Edit DB error"
+            return errors
+
         params = get_api_params(r)
         a = a if a else get_authorization(params=params)
 
@@ -856,9 +911,11 @@ class Goods(Resource):
                 if args['name'] and args['name'] != goods.name:
                     try:
                         if len(args['name']) > 80:
-                            errors['name'] = "Название должно быть не более 80 символов."
+                            m = "Название должно быть не более 80 символов ({}).".format(len(args['name']))
+                            errors['name'] = m
                         elif '/' in args['name']:
-                            errors['name'] = "Название не может содержать символ '/'."
+                            m = "Название не может содержать символ '/'."
+                            errors['name'] = m
                         else:
                             old_folder = get_folder(goods, sl=False)
                             goods.name = args['name']
@@ -870,105 +927,99 @@ class Goods(Resource):
                         errors['name'] = unknown_err
 
                 # категории товара
+                curr_category = CategoryModel.query.filter_by(name=goods.category).first()
                 if args['category'] and args['category'] != goods.category:
                     try:
                         if len(args['category']) > 150:
-                            errors['category'] = "Категория должна быть не более 150 символов."
+                            m = "Категория ({}) должна быть не более 150 символов.".format(len(args['category']))
+                            errors['category'] = m
                         elif '/' in args['category']:
-                            errors['category'] = "Категория не может содержать символ '/' в названии."
-                        elif args['category'] != goods.category:
-                            old_category = CategoryModel.query.filter_by(name=goods.category).first()
-                            check_category = CategoryModel.query.filter_by(rus_name=args['rus_category']).first()
-                            if args['rus_category'] == old_category.rus_name and \
-                                    len(GoodsModel.query.filter_by(category=old_category.name).all()) > 1:
-                                errors['rus_category'] = "Русския категория должна быть уникальной " \
-                                                         "(в отличие от обычной)."
-                            elif check_category and check_category.name != args['category'] and \
-                                    len(GoodsModel.query.filter_by(category=old_category.name).all()) > 1:
-                                errors['rus_category'] = "Русския категория должна " \
-                                                         "согласоваться с обычной ({}).".format(check_category.name)
-                            elif check_category and check_category.name != args['category']:
-                                errors['category'] = "Русское название новой категории не совпадает с заданным."
-                            elif args['rus_category'] and len(args['rus_category']) > 150:
-                                errors['rus_category'] = "Категория должна быть не более 150 символов."
-                            elif check_category and args['category'] == goods.category and \
-                                    len(GoodsModel.query.filter_by(category=args['category']).all()) == 1:
-                                check_category.name = args['category']
-                                db.session.commit()
-                                goods.category = args['category']
-                                db.session.commit()
+                            m = "Категория не может содержать символ '/' в названии."
+                            errors['category'] = m
+                        else:
+                            # если нужно изменить и русскую категорию
+                            if args['rus_category'] != curr_category.rus_name:
+                                if args['rus_category'] and len(args['rus_category']) > 150:
+                                    m = "Категория должна быть не более 150 символов."
+                                    errors['rus_category'] = m
+                                elif '/' in args['rus_category']:
+                                    m = "Категория не может содержать символ '/' в названии."
+                                    errors['rus_category'] = m
+                                else:
+                                    check_category = CategoryModel.query.filter_by(name=args['category']).first()
+                                    check_rus_category = CategoryModel.query.filter_by(rus_name=args['rus_category'])
+                                    check_rus_category = check_rus_category.first()
+                                    # если русская категория существует в БД
+                                    if check_rus_category:
+                                        # и если переданная системная категория соответствует ей
+                                        if check_rus_category.name == args['category']:
+                                            # т.е. если и русская и системная категории есть в БД
+                                            new_category = CategoryModel(name=args['category'],
+                                                                         rus_name=args['rus_category'])
+                                            move_goods(goods, new_category, errors=errors)  # перемещаем данные + БД
+                                        else:
+                                            m = "Русская категория должна быть уникальной для каждой " \
+                                                "системной категории (конфликт: {}).".format(check_rus_category.name)
+                                            errors['rus_category'] = m
+                                    # если системная категория есть в БД
+                                    elif check_category:
+                                        # на русскую категорию проверку делать уже бессмысленно (сделано выше)
+                                        m = "Русская категория должна быть уникальной для каждой " \
+                                            "системной категории (конфликт: {}).".format(check_category.name)
+                                        errors['rus_category'] = m
+                                    else:
+                                        # т.е. если ни русской категории, ни системной нет в БД
+                                        new_category = CategoryModel(name=args['category'],
+                                                                     rus_name=args['rus_category'])
+                                        move_goods(goods, new_category)  # создаем директорию и перемещаем данные + БД
                             else:
-                                rus_category = args['rus_category']
-                                new_category = CategoryModel(name=args['category'], rus_name=rus_category)
-
-                                try:
-                                    new_folder = get_folder(goods, category=new_category.name, sl=False)
-                                    old_folder = get_folder(goods, category=old_category.name, sl=False)
-                                    if not path.exists(new_folder):
-                                        makedirs(new_folder)
-                                    if path.exists(old_folder):
-                                        photos = goods.photos.split(';')
-                                        for item in listdir(old_folder):
-                                            if item in photos:
-                                                copyfile(old_folder + '/' + item, new_folder + '/' + item)
-                                                remove(old_folder + '/' + item)
-                                        if not listdir(old_folder):
-                                            rmdir(old_folder)
-                                            old_category_folder = "/".join(old_folder.split('/')[:-1])
-                                            if not list(filter(lambda file_name: file_name != '.DS_Store',
-                                                               listdir(old_category_folder))):
-                                                rmdir(old_category_folder)
-                                except Exception as e:
-                                    print("GoodsAPI Error (move goods folder): ", e)
-
-                                folder = get_folder(goods, category=new_category.name, sl=False)
-                                if not path.exists(folder):
-                                    makedirs(folder)
-                                    print("GoodsAPI Error (unknown, move folder) - done!")
-
-                                if len(GoodsModel.query.filter_by(category=old_category.name).all()) == 1:
-                                    db.session.delete(old_category)
-                                    db.session.commit()
-                                if not CategoryModel.query.filter_by(name=new_category.name).first():
-                                    db.session.add(new_category)
-                                    db.session.commit()
-                                goods = GoodsModel.query.filter_by(id=goods_id).first()
-                                goods.category = args['category']
-                                db.session.commit()
+                                # если в текущей категории присутствуют другие товары
+                                if len(GoodsModel.query.filter_by(category=goods.category).all()) > 1:
+                                    m = "Изменять системную категорию можно только вкупе с русской, " \
+                                        "либо убедившишь, что товар единственный в данной категории."
+                                    errors['category'] = m
+                                else:
+                                    # т.е. если это единственный товар категории,
+                                    # пытаемся переместить данные товара, удалить старую категорию,
+                                    # создать новую и изменить все в БД
+                                    new_category = CategoryModel(name=args['category'],
+                                                                 rus_name=curr_category.rus_name)
+                                    move_goods(goods, new_category)  # перемещаем данные
                     except Exception as e:
-                        print("GoodsAPI Error (set directory while edit info): ", e)
+                        print("GoodsAPI Error "
+                              "(set goods {} category while edit info): {}".format(goods.id, e))
                         errors['category'] = unknown_err
 
                 elif args['rus_category']:
                     try:
-                        if len(args['rus_category']) > 150:
-                            errors['rus_category'] = "Категория должна быть не более 150 символов."
-                        elif '/' in args['rus_category']:
-                            errors['rus_category'] = "Категория не может содержать символ '/' в названии."
-                        else:
-                            goods_category = CategoryModel.query.filter_by(name=goods.category).first()
-                            # проверка на изменение относительно существующей
-                            if args['rus_category'] != goods_category.rus_name:
+                        # есть ли различия между новой и текущей
+                        if curr_category and args['rus_category'] != curr_category.rus_name:
+                            if len(args['rus_category']) > 150:
+                                m = "Категория должна быть не более 150 символов."
+                                errors['rus_category'] = m
+                            elif '/' in args['rus_category']:
+                                m = "Категория не может содержать символ '/' в названии."
+                                errors['rus_category'] = m
+                            else:
                                 category = CategoryModel.query.filter_by(rus_name=args['rus_category']).first()
                                 # существует ли уже новая категория
                                 if category:
-                                    errors['rus_category'] = "Русския категория должна согласоваться " \
-                                                             "с обычной ({}).".format(category.name)
+                                    m = "Данная русския категория занята другой системной ({}).".format(category.name)
+                                    errors['rus_category'] = m
+                                # если в текущей системной категории находится только 1 товар (этот)
+                                # и тем самым изенение не повлияет на остальных
+                                elif len(GoodsModel.query.filter_by(category=curr_category.name).all()) == 1:
+                                    # меняем русское название системной категории
+                                    curr_category.rus_name = args['rus_category']
+                                    db.session.commit()
                                 else:
-                                    # если в обычной категории только сам этот товар
-                                    if len(GoodsModel.query.filter_by(category=goods_category.name).all()) == 1:
-                                        # переименовываем русскую категорию для данной обычной
-                                        # (редактируем связь между категориями)
-                                        goods_category.rus_name = args['rus_category']
-                                        db.session.commit()
-                                    else:
-                                        # зашита от перезаписи категорий остальных товаров
-                                        errors['rus_category'] = "Для новой русской категории " \
-                                                                 "необходима новая, уникальная обычная категория " \
-                                                                 "(в обычной категории данного товара находятся " \
-                                                                 "другие товары – сработала защита от случайного " \
-                                                                 "переименования категории у всех её товаров)."
-                    except:
+                                    # иначе зашита от перезаписи русских категорий остальных товаров
+                                    m = "В системной категории данного товара находятся другие товары – " \
+                                        "защита от случайного переименования русской категории других товаров."
+                                    errors['rus_category'] = m
+                    except Exception as e:
+                        print("GoodsAPI Error "
+                              "(set goods {} rus category while edit info): {}".format(goods.id, e))
                         errors['rus_category'] = unknown_err
 
                 # цены товара
@@ -1019,9 +1070,12 @@ class Goods(Resource):
                 if args['delete_photo']:
                     try:
                         if args['delete_photo'].strip('/') != NO_GOODS_PHOTO.strip('/'):
-                            remove(args['delete_photo'])
-                            photos = goods.photos.split(';')
                             photo = args['delete_photo'].split('/')[-1]
+                            # проверка на случай, если фото уже нет в папке
+                            if photo in listdir():
+                                remove(photo)
+                            # в любом случае, удаляем его из списка фотографий товара
+                            photos = goods.photos.split(';')
                             for i in range(photos.count(photo)):
                                 photos.remove(photo)
                             goods.photos = ";".join(photos) if photos else NO_GOODS_PHOTO
@@ -1036,9 +1090,13 @@ class Goods(Resource):
                         if type(args['add_photo']) is not list:
                             args['add_photo'] = [args['add_photo']]
                         goods_photos = goods.photos.split(';')
+                        args['add_photo'] = list(reversed(args['add_photo']))
                         for i in range(len(args['add_photo'])):
                             photo = args['add_photo'][i]
-                            if photo.filename in goods_photos:
+                            # проверка на случайное совпадение имен фотографий
+                            if photo.filename in goods_photos + listdir():
+                                m = "Некоторые фотографии не были загружены, т.к. произошел конфликт имен"
+                                errors['add_photo'] = m
                                 continue
                             try:
                                 ext = photo.filename.split('.')[-1]
@@ -1066,7 +1124,6 @@ class Goods(Resource):
                     except Exception as e:
                         print("GoodsAPI Error (load photo while edit info): ", e)
                         errors['add_photo'] = "Ошибка при загрузке фото."
-
                 db.session.commit()
                 return make_success(errors=errors)
             except Exception as e:
@@ -1244,7 +1301,7 @@ class Order(Resource):
                 if not verify_authorization(admin=True, a=a):
                     return make_success(False, message='Access Error')
                 try:
-                    orders = [i.to_dict() for i in OrderModel.query.filter_by(user_id=params['user_id']).all()]
+                    orders = [i.to_dict() for i in reversed(OrderModel.query.filter_by(user_id=params['user_id']).all())]
                     return make_success(orders=orders)
                 except Exception as e:
                     print("OrderAPI Error (): ", e)
@@ -1339,9 +1396,17 @@ class Order(Resource):
                     order_id = int(arg)
                     order = OrderModel.query.filter_by(id=order_id).first()
                     if order:
-                        # проверка на админа
-                        if not verify_curr_admin(a):
-                            return make_success(False, message="Access Error")
+                        if params['status'] in ['done', 'delivered']:
+                            # проверка на админа
+                            if not verify_curr_admin(a):
+                                return make_success(False, message="Access Error")
+                        elif params['status'] in ['processing', 'cancel']:
+                            # проверка авторизации
+                            if not verify_authorization(a):
+                                return make_success(False, message="Access Error")
+                        else:
+                            # если статус-аргумент не соответствует ожиданиям
+                            return make_success(False, message="Bad status")
                         order.status = params['status']
                         db.session.commit()
                         return make_success()
@@ -1389,9 +1454,6 @@ def goods_category(category):
 
     t = api_response['category']['rus_name']
 
-    if request.method == "GET":
-        return render('goods-category.html', title=t, data=data)
-
     form = get_request_data()
     if request.method == "POST":
         if 'sign-in' in form:
@@ -1409,12 +1471,14 @@ def goods_category(category):
 
         if 'sorting' in form:
             data['sorting'] = form['sorting']
-            api_response = goodsAPI.get([category, '?sort=' + data['sorting']])
+            api_response = goodsAPI.get(['category', '?category={}&sort={}'.format(category, data['sorting'])])
             if api_response['success']:
                 data['goods'] = api_response['goods']
             resp = make_response(render('goods-category.html', title=t, data=data))
             resp.set_cookie('sorting', form['sorting'])
             return resp
+
+    return render('goods-category.html', title=t, data=data)
 
 
 @app.route('/re_restore/<string:category>/<int:goods_id>', methods=["GET", "POST"])
@@ -1482,9 +1546,9 @@ def sign_in(page, t, data, ready_data=None):
     if get_authorization()['id']:
         return redirect('/lk')
 
-    response = authorizationAPI.get(request_data=ready_data if ready_data else get_request_data())
-    if response['success']:
-        a = get_authorization(response['success'], request.form['login'], request.form['password'], img=True)
+    api_response = authorizationAPI.get(request_data=ready_data if ready_data else get_request_data())
+    if api_response['success']:
+        a = get_authorization(api_response['success'], request.form['login'], request.form['password'], img=True)
         if page in ('sign-up.html', 'lk.html'):
             if verify_curr_admin(a):
                 data = D.get_data(base_req=True, lk_admin_req=True, tmp_a=a)
@@ -1502,7 +1566,7 @@ def sign_in(page, t, data, ready_data=None):
         resp.set_cookie('userLogin', str(a['login']))
         resp.set_cookie('userPassword', str(a['password']))
     else:
-        data['errors']['authorization'].update(response['errors'])
+        data['errors']['authorization'].update(api_response['errors'])
         data['errors']['authorization']['any'] = True
         data['last']['authorization']['login'] = request.form['login']
         data['last']['authorization']['password'] = request.form['password']
@@ -1536,12 +1600,13 @@ def sign_up():
         if 'sign-in' in form:
             return sign_in('sign-up.html', t, data)
 
-        response = authorizationAPI.post(request_data=form)
-        if response['success']:
-            return sign_in('lk.html', t='Успешно', data=data, ready_data={'login': form['login'],
+        api_response = authorizationAPI.post(request_data=form)
+        if api_response['success']:
+            return sign_in('lk.html', t='Успешно', data=data, ready_data={'id': api_response['success'],
+                                                                          'login': form['login'],
                                                                           'password': form['password']})
         else:
-            data['errors']['registration'].update(response['errors'])
+            data['errors']['registration'].update(api_response['errors'])
             data['last']['registration'].update(form)
     return render('sign-up.html', t=t, data=data)
 
@@ -1563,14 +1628,26 @@ def lk():
                 response = userAPI.put([get_authorization()['id']], request_data=request_data)
                 data = D.get_data(base_req=True, lk_req=True)
                 data['errors']['change_profile_info'].update(response['errors'])
-            if 'photo' in request_data:
+            elif 'photo' in request_data:
                 response = userAPI.put([get_authorization()['id']], request_data=request_data)
                 data = D.get_data(base_req=True, lk_req=True)
                 data['errors']['change_profile_info'].update(response['errors'])
-            if 'deleteUserBtn' in request_data:
+            elif 'deleteUserBtn' in request_data:
                 resp = userAPI.delete([request_data['deleteUserBtn']])
                 if resp['success']:
                     return sign_out()
+            elif 'deleteOrderBtn' in request_data:
+                resp = orderAPI.delete([request_data['deleteOrderBtn']])
+                if not resp['success']:
+                    data['errors']['edit_order'] = resp['message']
+            elif 'cancelOrderBtn' in request_data:
+                resp = orderAPI.put([request_data['cancelOrderBtn'], '?status=cancel'])
+                if not resp['success']:
+                    data['errors']['edit_order'] = resp['message']
+
+            data = D.get_data(base_req=True, lk_req=True)
+            if not data:
+                return server_error()
         return render("lk.html", title=t, data=data)
     return redirect(HOME)
 
@@ -1612,6 +1689,11 @@ def lk_admin():
             elif 'cancelOrderBtn' in form:
                 category = 'orders'
                 resp = orderAPI.put([form['cancelOrderBtn'], '?status=cancel'])
+                if not resp['success']:
+                    err['add_data']['orders'] = resp['message']
+            elif 'deliveredOrderBtn' in form:
+                category = 'orders'
+                resp = orderAPI.put([form['deliveredOrderBtn'], '?status=delivered'])
                 if not resp['success']:
                     err['add_data']['orders'] = resp['message']
             elif 'doneOrderBtn' in form:

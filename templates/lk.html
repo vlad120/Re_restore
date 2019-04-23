@@ -49,10 +49,35 @@
             margin-top: 30px;
             width: 260px;
         }
-        .card {
-            width: 700px;
+        .order-card {
             margin-bottom: 10px;
-            background-color: #f3fffd;
+            margin-right: 16px;
+            min-width: 600px;
+            width: 60%;
+        }
+        .card-text { margin-bottom: 0; }
+        .card-header { padding-bottom: 5px; }
+        .card-header-text {
+            font-size: 18px;
+            color: seagreen;
+            margin-bottom: 0;
+        }
+        .btn-dark {
+            float: right;
+            margin-top: -40px;
+        }
+        .btn-warning {
+            float: right;
+            margin-top: -40px;
+        }
+        .status {
+            float: right;
+            padding-right: 20px;
+        }
+        .orders-title {
+            color: teal;
+            margin-top: 40px;
+            margin-bottom: 20px;
         }
     </style>
 {% endblock %}
@@ -150,4 +175,55 @@
             <p class="change-info-error">{{ data['errors']['change_profile_info']['photo'] }}</p>
         {% endif %}
     </form>
+
+    {% if data['errors']['edit_order'] %}
+        <h3 class="change-info-error">{{ data['errors']['edit_order'] }}</h3>
+    {% endif %}
+
+    <h2 class="content orders-title">Мои заказы</h2>
+    <div class="orders content">
+        {% for item in data['orders'] %}
+            <div class="card border-info mb-3 order-card">
+                <div class="card-header">
+                    <b>
+                        <p class="one-line card-header-text">№{{ item['id'] }} от <i>{{ item['user']['login'] }}</i></p>
+                        <p class="one-line card-header-text status">
+                            {% if item['status'] == 'processing' %}
+                                <span style="color: teal;">Выполняется</span>
+                            {% elif item['status'] == 'delivered' %}
+                                <span style="color: green;">Доставлено в пункт выдачи</span>
+                            {% elif item['status'] == 'done' %}
+                                <span style="color: limegreen;">Выполнено</span>
+                            {% elif item['status'] == 'cancel' %}
+                                <span style="color: orangered;">Отменён</span>
+                            {% else %}
+                                <span style="color: #333a40">Неизвестно</span>
+                            {% endif %}
+                        </p>
+                    </b>
+                </div>
+                <div class="card-body">
+                    <ul class="list-group list-group-horizontal-sm">
+                        {% for g in item['goods'] %}
+                            <li class="list-group-item"><a href="{{ g['full_link'] }}" target="_blank">{{ g['id'] }}</a> - {{ g['price'] }}руб * {{ g['count']}}шт</li>
+                        {% endfor %}
+
+                    </ul>
+                    -------------------------------------
+                    <p class="card-text"><b>Итого:</b> {{ item['total'] }}руб</p>
+                    <form method="post" class="one-line" style="float: right; margin-top: 5px;">
+                        <button type="submit" class="btn btn-dark" name="deleteOrderBtn" value="{{ item['id'] }}">Удалить</button>
+                    </form>
+                    {% if item['status'] in ['processing', 'delivered'] %}
+                        <form method="post" class="one-line" style="float: right; margin-right: 20px; margin-top: 5px;">
+                            <button type="submit" class="btn btn-warning" name="cancelOrderBtn" value="{{ item['id'] }}">Отменить</button>
+                        </form>
+                    {% endif %}
+                </div>
+            </div>
+        {% endfor %}
+        {% if not data['orders'] %}
+            <h4 class="content">Здесь пока ничего нет ;)</h4>
+        {% endif %}
+    </div>
 {% endblock %}

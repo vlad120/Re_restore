@@ -76,7 +76,7 @@
                         {% endif %}
                         {% for item in data['goods'] %}
                             <div class="card border-info mb-3 goods-card">
-                                <div class="card-header card-header-text"><b>№{{ item['id'] }}: <a class="card-header-text" href="{{ item['full_link'] }}"><i>{{ item['name'] }}</i></a></b></div>
+                                <div class="card-header card-header-text"><b>№{{ item['id'] }}: <a class="card-header-text" href="{{ item['full_link'] }}" target="_blank"><i>{{ item['name'] }}</i></a></b></div>
                                 <div class="card-body">
                                     <p class="card-text">{{ item['short_description'] }}</p>
                                     <form method="post">
@@ -98,8 +98,10 @@
                                         <p class="one-line status">
                                             {% if item['status'] == 'processing' %}
                                                 Выполняется
+                                            {% elif item['status'] == 'delivered' %}
+                                                Доставлено в пункт выдачи
                                             {% elif item['status'] == 'done' %}
-                                                Готов
+                                                Выполнено
                                             {% elif item['status'] == 'cancel' %}
                                                 Отменён
                                             {% else %}
@@ -111,7 +113,7 @@
                                 <div class="card-body">
                                     <ul class="list-group list-group-horizontal-sm">
                                         {% for g in item['goods'] %}
-                                            <li class="list-group-item"><a href="{{ g['full_link'] }}">{{ g['id'] }}</a> - {{ g['price'] }}руб * {{ g['count']}}шт</li>
+                                            <li class="list-group-item"><a href="{{ g['full_link'] }}" target="_blank">{{ g['id'] }}</a> - {{ g['price'] }}руб * {{ g['count']}}шт</li>
                                         {% endfor %}
 
                                     </ul>
@@ -124,6 +126,10 @@
                                         <form method="post" class="one-line" style="float: right; margin-right: 20px; margin-top: 5px;">
                                             <button type="submit" class="btn btn-warning" name="cancelOrderBtn" value="{{ item['id'] }}">Отменить</button>
                                         </form>
+                                        <form method="post" class="one-line" style="float: right; margin-right: 20px; margin-top: 5px;">
+                                            <button type="submit" class="btn btn-success" name="deliveredOrderBtn" value="{{ item['id'] }}">Доставлено</button>
+                                        </form>
+                                    {% elif item['status'] == 'delivered' %}
                                         <form method="post" class="one-line" style="float: right; margin-right: 20px; margin-top: 5px;">
                                             <button type="submit" class="btn btn-success" name="doneOrderBtn" value="{{ item['id'] }}">Готово</button>
                                         </form>
