@@ -1,0 +1,8 @@
+# info для проверки
+Пользователи (логин:пароль) {
+    aaa: qwerty
+    han: qwerty
+}
+Админ {
+    admin: admin
+}
