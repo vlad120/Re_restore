@@ -1,5 +1,5 @@
 ﻿"""
-    Version 1.0.2 (24.04.2019)
+    Version 1.0.3 (25.04.2019)
     Mironov Vladislav
 """
 
@@ -31,6 +31,8 @@ def get_authorization(tmp_login=None, tmp_password=None, img=False, params=None)
     """
     if params and type(params) == dict and 'authorization' in params:
         if params['authorization']:
+            if type(params['authorization']) is list:
+                params['authorization'] = params['authorization'][0]
             try:
                 tmp_login, tmp_password = (i.strip() for i in params['authorization'].split(';'))
             except:
@@ -98,17 +100,13 @@ def get_folder(goods, sl=True, category=None):
     return 'static/goods/{}/{}'.format(category, name) + ('/' if sl else '')
 
 
-def get_api_params(r):
-    """ Обработка аргуентов, переданных в API. """
-    params = dict()
-    if len(r) > 1:
+def optimize_params(params):
+    for arg in params:
         try:
-            if r[1][0] == '?':
-                for i in (p.split('=') for p in r[1][1:].split('&')):
-                    params[i[0]] = i[1]
+            if type(params[arg]) is list:
+                params[arg] = params[arg][0]
         except:
             pass
-    return params
 
 
 class GoodsModel(db.Model):
@@ -299,7 +297,7 @@ class DataTemplate:
 
     def get_base_data(self, anyway=False):
         try:
-            api_response = basketAPI.get(['curr'])
+            api_response = basketAPI.get('curr')
             basket = [[int(k) for k in g][0] for g in api_response['basket']] if api_response['success'] else []
             len_basket = len(api_response['basket']) if api_response['success'] else None
             return {'menu_items': [c.to_dict() for c in CategoryModel.query.all()],
@@ -329,7 +327,7 @@ class DataTemplate:
     def get_main_data(self):  # главная страница
         try:
             interesting_goods = '10'
-            api_response = goodsAPI.get(['random', '?n=' + interesting_goods])
+            api_response = goodsAPI.get('random', params={'n': interesting_goods})
             if api_response['success']:
                 goods = api_response['goods']
                 slides = list(filter(lambda f: f != '.DS_Store', listdir("static/main_slides")))
@@ -343,8 +341,8 @@ class DataTemplate:
     def get_lk_data(self, a=None):
         try:
             a = a if a else get_authorization()
-            user_api_response = userAPI.get([a['id']], a=a)
-            order_api_response = orderAPI.get(['user', '?user_id=' + str(a['id'])], a=a)
+            user_api_response = userAPI.get(a['id'], a=a)
+            order_api_response = orderAPI.get('user', a=a, params={'user_id': str(a['id'])})
             if user_api_response['success'] and order_api_response['success']:
                 return {'user': user_api_response['user'],
                         'orders': order_api_response['orders'],
@@ -362,9 +360,9 @@ class DataTemplate:
     def get_lk_admin_data(self, a=None):
         try:
             a = a if a else get_authorization()
-            goods_response = goodsAPI.get(['all'], a=a)
-            orders_response = orderAPI.get(['all'], a=a)
-            users_response = userAPI.get(['all'], a=a)
+            goods_response = goodsAPI.get('all', a=a)
+            orders_response = orderAPI.get('all', a=a)
+            users_response = userAPI.get('all', a=a)
             data = {'curr_category': 'goods',
                     'goods': goods_response['goods'] if goods_response['success'] else [],
                     'orders': orders_response['orders'] if orders_response['success'] else [],
@@ -411,9 +409,9 @@ class DataTemplate:
         a = a if a else get_authorization()
         if a:
             try:
-                api_response = basketAPI.get(['curr'])
+                api_response = basketAPI.get('curr')
                 basket = [[(int(i), int(g[i])) for i in g][0] for g in api_response['basket']]
-                goods = [goodsAPI.get([g[0]])['data']['goods'] for g in basket]
+                goods = [goodsAPI.get(g[0])['data']['goods'] for g in basket]
                 for i in range(len(goods)):
                     goods[i]['count'] = basket[i][1]
                 if api_response['success']:
@@ -427,9 +425,9 @@ class DataTemplate:
         a = a if a else get_authorization()
         if a:
             try:
-                api_response = basketAPI.get(['curr'])
+                api_response = basketAPI.get('curr')
                 basket = [[(int(i), int(g[i])) for i in g][0] for g in api_response['basket']]
-                goods = [goodsAPI.get([g[0]])['data']['goods'] for g in basket]
+                goods = [goodsAPI.get(g[0])['data']['goods'] for g in basket]
                 for i in range(len(goods)):
                     goods[i]['count'] = basket[i][1]
                 if api_response['success']:
@@ -556,11 +554,12 @@ class AuthorizationAPI(Resource):
 
 class UserAPI(Resource):
     """ API для получения / редактирования / удаления данных пользователей. """
-    def get(self, r, a=None):
-        params = get_api_params(r)
+    def get(self, r, a=None, params=dict()):
+        params = params if params else dict(request.args)
+        optimize_params(params)
         a = a if a else get_authorization(params=params)
 
-        arg = str(r[0]).lower()
+        arg = str(r).lower().strip(' /')
         # получение полных данных конкретного пользователя
         if arg.isdigit():
             user_id = int(arg)
@@ -586,11 +585,12 @@ class UserAPI(Resource):
                 return make_success(False, message='Server Error')
         return make_success(False, message='Bad request')
 
-    def put(self, r, a=None, request_data=None):
-        params = get_api_params(r)
+    def put(self, r, a=None, params=dict(), request_data=None):
+        params = params if params else dict(request.args)
+        optimize_params(params)
         a = a if a else get_authorization(params=params)
 
-        arg = str(r[0])
+        arg = str(r).lower().strip(' /')
         if arg.isdigit():
             errors = {'name': None,
                       'surname': None,
@@ -680,11 +680,12 @@ class UserAPI(Resource):
 
         return make_success(False, 'Bad request')
 
-    def delete(self, r, a=None):
-        params = get_api_params(r)
+    def delete(self, r, a=None, params=dict()):
+        params = params if params else dict(request.args)
+        optimize_params(params)
         a = a if a else get_authorization(params=params)
 
-        arg = str(r[0])
+        arg = str(r).lower().strip(' /')
         if arg.isdigit():
             user_id = int(arg)
             # проверка на собственника учетной записи / админа
@@ -713,11 +714,12 @@ class UserAPI(Resource):
 
 class GoodsAPI(Resource):
     """ API для получения / реадктирования информации о товаре, создания / удаления товаров. """
-    def get(self, r, a=None):
-        params = get_api_params(r)
+    def get(self, r, a=None, params=dict()):
+        params = params if params else dict(request.args)
+        optimize_params(params)
         a = a if a else get_authorization(params=params)
 
-        arg = str(r[0]).lower()
+        arg = str(r).lower().strip(' /')
         # полная информация об одном товаре
         if arg.isdigit():
             goods_id = int(arg)
@@ -787,7 +789,7 @@ class GoodsAPI(Resource):
 
         return make_success(False, message='Bad request')
 
-    def put(self, r, a=None, request_data=None):
+    def put(self, r, a=None, params=dict(), request_data=None):
         # перемещение данных товара в файловой системе
         def move_goods(goods, new_category, errors=dict()):
             e = None
@@ -838,10 +840,11 @@ class GoodsAPI(Resource):
                     errors['category'] = "Edit DB error"
             return errors
 
-        params = get_api_params(r)
+        params = params if params else dict(request.args)
+        optimize_params(params)
         a = a if a else get_authorization(params=params)
 
-        arg = str(r[0])
+        arg = str(r).lower().strip(' /')
         if arg.isdigit():
             errors = D.get_edit_goods_data()['errors']['edit_goods']
             try:
@@ -1092,11 +1095,12 @@ class GoodsAPI(Resource):
 
         return make_success(False, 'Bad request')
 
-    def post(self, r, a=None, request_data=None):
-        params = get_api_params(r)
+    def post(self, r, a=None, params=dict(), request_data=None):
+        params = params if params else dict(request.args)
+        optimize_params(params)
         a = a if a else get_authorization(params=params)
 
-        arg = str(r[0]).lower()
+        arg = str(r).lower().strip(' /')
         # размещение нового товара
         if arg == 'new':
             if not verify_curr_admin(a):
@@ -1184,11 +1188,12 @@ class GoodsAPI(Resource):
 
         return make_success(False, message='Bad request')
 
-    def delete(self, r, a=None):
-        params = get_api_params(r)
+    def delete(self, r, a=None, params=dict()):
+        params = params if params else dict(request.args)
+        optimize_params(params)
         a = a if a else get_authorization(params=params)
 
-        arg = str(r[0])
+        arg = str(r).lower().strip(' /')
         if arg.isdigit():
             # проверка на админа
             if not verify_curr_admin(a):
@@ -1223,11 +1228,12 @@ class GoodsAPI(Resource):
 
 class BasketAPI(Resource):
     """ API для получения корзины, реадктирования / добавления / удаления товаров в ней. """
-    def get(self, r, a=None):
-        params = get_api_params(r)
+    def get(self, r, a=None, params=dict()):
+        params = params if params else dict(request.args)
+        optimize_params(params)
         a = a if a else get_authorization(params=params)
 
-        arg = str(r[0]).lower()
+        arg = str(r).lower().strip(' /')
         if arg == 'curr':
             try:
                 if a:
@@ -1242,11 +1248,12 @@ class BasketAPI(Resource):
 
         return make_success(False, message='Bad request')
 
-    def put(self, r, a=None):
-        params = get_api_params(r)
+    def put(self, r, a=None, params=dict()):
+        params = params if params else dict(request.args)
+        optimize_params(params)
         a = a if a else get_authorization(params=params)
 
-        arg = str(r[0])
+        arg = str(r).lower().strip(' /')
         if arg.isdigit():
             try:
                 if a:
@@ -1289,11 +1296,12 @@ class BasketAPI(Resource):
 
         return make_success(False, message='Bad request')
 
-    def post(self, r, a=None):
-        params = get_api_params(r)
+    def post(self, r, a=None, params=dict()):
+        params = params if params else dict(request.args)
+        optimize_params(params)
         a = a if a else get_authorization(params=params)
 
-        arg = str(r[0])
+        arg = str(r).lower().strip(' /')
         if arg.isdigit():
             try:
                 if not GoodsModel.query.filter_by(id=arg).first():
@@ -1317,11 +1325,12 @@ class BasketAPI(Resource):
 
         return make_success(False, message='Bad request')
 
-    def delete(self, r, a=None):
-        params = get_api_params(r)
+    def delete(self, r, a=None, params=dict()):
+        params = params if params else dict(request.args)
+        optimize_params(params)
         a = a if a else get_authorization(params=params)
 
-        arg = str(r[0])
+        arg = str(r).lower().strip(' /')
         if arg.isdigit():
             try:
                 if not GoodsModel.query.filter_by(id=arg).first():
@@ -1348,11 +1357,12 @@ class BasketAPI(Resource):
 
 class OrderAPI(Resource):
     """ API для получения / размещения / удаления заказов, реадктирования их статусов. """
-    def get(self, r, a=None):
-        params = get_api_params(r)
+    def get(self, r, a=None, params=dict()):
+        params = params if params else dict(request.args)
+        optimize_params(params)
         a = a if a else get_authorization(params=params)
 
-        arg = str(r[0]).lower()
+        arg = str(r).lower().strip(' /')
         # получение всех заказов (админ)
         if arg == 'all':
             if not verify_curr_admin(a):
@@ -1377,11 +1387,12 @@ class OrderAPI(Resource):
 
         return make_success(False, message='Bad request')
 
-    def post(self, r, a=None):
-        params = get_api_params(r)
+    def post(self, r, a=None, params=dict()):
+        params = params if params else dict(request.args)
+        optimize_params(params)
         a = a if a else get_authorization(params=params)
 
-        arg = str(r[0]).lower()
+        arg = str(r).lower().strip(' /')
         if arg == 'curr':
             try:
                 # проверка авторизации (админу делать заказы нельзя)
@@ -1391,24 +1402,24 @@ class OrderAPI(Resource):
                         return make_success(False, message="User not found")
 
                     # получение корзины
-                    api_response = basketAPI.get(['curr'])
+                    api_response = basketAPI.get('curr')
                     if not api_response['success'] or not api_response['basket']:
                         return make_success(False, message="Basket get data error")
                     # обработка в удобный вид кортежей [(id, count), ...]
                     basket = [[(int(i), int(g[i])) for i in g][0] for g in api_response['basket']]
-                    goods = [goodsAPI.get([g[0]])['data']['goods'] for g in basket]
+                    goods = [goodsAPI.get(g[0])['data']['goods'] for g in basket]
                     errs = []
                     for i in range(len(goods)):
                         # проверка на наличие требуемого количества товаров
                         if goods[i]['count'] < basket[i][1]:
                             # если товар закончился
                             if goods[i]['count'] < 1:
-                                if not basketAPI.delete([goods[i]['id']])['success']:
+                                if not basketAPI.delete(goods[i]['id'])['success']:
                                     return make_success(False,
                                                         message="Delete goods from basket error "
                                                                 "(count value is more original)")
                             # пытаемся изменить количество в корзине
-                            if not basketAPI.put([goods[i]['id'], '?count=all'])['success']:
+                            if not basketAPI.put(goods[i]['id'], params={'count': 'all'})['success']:
                                 return make_success(False,
                                                     message="Edit goods from basket error "
                                                             "(count value is more original)")
@@ -1439,11 +1450,12 @@ class OrderAPI(Resource):
 
         return make_success(False, message='Bad request')
 
-    def delete(self, r, a=None):
-        params = get_api_params(r)
+    def delete(self, r, a=None, params=dict()):
+        params = params if params else dict(request.args)
+        optimize_params(params)
         a = a if a else get_authorization(params=params)
 
-        arg = str(r[0])
+        arg = str(r).lower().strip(' /')
         if arg.isdigit():
             try:
                 order_id = int(arg)
@@ -1462,11 +1474,12 @@ class OrderAPI(Resource):
 
         return make_success(False, message='Bad request')
 
-    def put(self, r, a=None):
-        params = get_api_params(r)
+    def put(self, r, a=None, params=dict()):
+        params = params if params else dict(request.args)
+        optimize_params(params)
         a = a if a else get_authorization(params=params)
 
-        arg = str(r[0])
+        arg = str(r).lower().strip(' /')
         if arg.isdigit():
             try:
                 # редактирование статуса заказа
@@ -1511,7 +1524,7 @@ def re_restore():
             return sign_in('index.html', t, data)
 
         if 'addToBasket' in request.form:
-            api_response = basketAPI.post([request.form['addToBasketGoodsID']])
+            api_response = basketAPI.post(request.form['addToBasketGoodsID'])
             if not api_response['success']:
                 print("Add to basket error: ", api_response['message'])
             else:
@@ -1527,7 +1540,7 @@ def goods_category(category):
     data['sorting'] = request.cookies.get('sorting')
     if not data['sorting']:
         data['sorting'] = 'NEW'
-    api_response = goodsAPI.get(['category', '?category={}&sort={}'.format(category, data['sorting'])])
+    api_response = goodsAPI.get('category', params={'category': category, 'sort': data['sorting']})
     if api_response['success']:
         data['goods'] = api_response['goods']
         data['full_category'] = api_response['category']
@@ -1540,7 +1553,7 @@ def goods_category(category):
             return sign_in('goods-category.html', 'Вход', data)
 
         if 'addToBasket' in form:
-            api_response = basketAPI.post([form['addToBasketGoodsID']])
+            api_response = basketAPI.post(form['addToBasketGoodsID'])
             if not api_response['success']:
                 print("Add to basket error: ", api_response['message'])
             else:
@@ -1551,7 +1564,7 @@ def goods_category(category):
 
         if 'sorting' in form:
             data['sorting'] = form['sorting']
-            api_response = goodsAPI.get(['category', '?category={}&sort={}'.format(category, data['sorting'])])
+            api_response = goodsAPI.get('category', params={'category': category, 'sort': data['sorting']})
             if api_response['success']:
                 data['goods'] = api_response['goods']
             resp = make_response(render('goods-category.html', title=t, data=data))
@@ -1567,7 +1580,7 @@ def full_goods(category, goods_id):
     if not data:
         return server_error()
 
-    api_response = goodsAPI.get([goods_id])
+    api_response = goodsAPI.get(goods_id)
     if not api_response['success']:
         return error(message=api_response['message'])
     data.update(api_response['data'])
@@ -1580,7 +1593,7 @@ def full_goods(category, goods_id):
             return sign_in('goods.html', t, data)
 
         if 'addToBasket' in form:
-            api_response = basketAPI.post([form['addToBasketGoodsID']])
+            api_response = basketAPI.post(form['addToBasketGoodsID'])
             if not api_response['success']:
                 print("Add to basket error: ", api_response['message'])
             else:
@@ -1599,7 +1612,7 @@ def full_goods_admin(goods_id):
     data = D.get_data(base_req=True, edit_goods_req=True)
     if not data:
         return server_error()
-    api_response = goodsAPI.get([goods_id])
+    api_response = goodsAPI.get(goods_id)
     if not api_response['success']:
         return error(message=api_response['message'])
     data.update(api_response['data'])
@@ -1609,12 +1622,12 @@ def full_goods_admin(goods_id):
     if request.method == "POST":
         form = get_request_data(files=True)
         if {'changeBtn', 'btnAddPhoto', 'delete_photo'} & set(form.keys()):
-            api_response = goodsAPI.put([goods_id], request_data=form)
+            api_response = goodsAPI.put(goods_id, request_data=form)
             if not api_response['success']:
                 return server_error()
             data['menu_items'] = D.get_base_data()['menu_items']
             data['errors']['edit_goods'].update(api_response['errors'])
-            api_response = goodsAPI.get([goods_id])
+            api_response = goodsAPI.get(goods_id)
             if not api_response['success']:
                 return server_error(message=api_response['message'])
             data.update(api_response['data'])
@@ -1705,23 +1718,23 @@ def lk():
 
         if request.method == 'POST':
             if 'changeUserInfoBtn' in request_data:
-                response = userAPI.put([get_authorization()['id']], request_data=request_data)
+                response = userAPI.put(get_authorization()['id'], request_data=request_data)
                 data = D.get_data(base_req=True, lk_req=True)
                 data['errors']['change_profile_info'].update(response['errors'])
             elif 'photo' in request_data:
-                response = userAPI.put([get_authorization()['id']], request_data=request_data)
+                response = userAPI.put(get_authorization()['id'], request_data=request_data)
                 data = D.get_data(base_req=True, lk_req=True)
                 data['errors']['change_profile_info'].update(response['errors'])
             elif 'deleteUserBtn' in request_data:
-                resp = userAPI.delete([request_data['deleteUserBtn']])
+                resp = userAPI.delete(request_data['deleteUserBtn'])
                 if resp['success']:
                     return sign_out()
             elif 'deleteOrderBtn' in request_data:
-                resp = orderAPI.delete([request_data['deleteOrderBtn']])
+                resp = orderAPI.delete(request_data['deleteOrderBtn'])
                 if not resp['success']:
                     data['errors']['edit_order'] = resp['message']
             elif 'cancelOrderBtn' in request_data:
-                resp = orderAPI.put([request_data['cancelOrderBtn'], '?status=cancel'])
+                resp = orderAPI.put(request_data['cancelOrderBtn'], params={'status': 'cancel'})
                 if not resp['success']:
                     data['errors']['edit_order'] = resp['message']
 
@@ -1751,39 +1764,39 @@ def lk_admin():
             last = dict()
             if 'addGoodsBtn' in form:
                 category = 'goods'
-                resp = goodsAPI.post(['new'], request_data=form)
+                resp = goodsAPI.post('new', request_data=form)
                 if not resp['success']:
                     err['add_goods'] = resp['errors']
                     last['add_goods'] = form
                     category = 'addGoods'
             elif 'deleteGoodsBtn' in form:
                 category = 'goods'
-                resp = goodsAPI.delete([form['deleteGoodsBtn']])
+                resp = goodsAPI.delete(form['deleteGoodsBtn'])
                 if not resp['success']:
                     err['add_data']['goods'] = resp['message']
             elif 'deleteOrderBtn' in form:
                 category = 'orders'
-                resp = orderAPI.delete([form['deleteOrderBtn']])
+                resp = orderAPI.delete(form['deleteOrderBtn'])
                 if not resp['success']:
                     err['add_data']['orders'] = resp['message']
             elif 'cancelOrderBtn' in form:
                 category = 'orders'
-                resp = orderAPI.put([form['cancelOrderBtn'], '?status=cancel'])
+                resp = orderAPI.put(form['cancelOrderBtn'], params={'status': 'cancel'})
                 if not resp['success']:
                     err['add_data']['orders'] = resp['message']
             elif 'deliveredOrderBtn' in form:
                 category = 'orders'
-                resp = orderAPI.put([form['deliveredOrderBtn'], '?status=delivered'])
+                resp = orderAPI.put(form['deliveredOrderBtn'], params={'status': 'delivered'})
                 if not resp['success']:
                     err['add_data']['orders'] = resp['message']
             elif 'doneOrderBtn' in form:
                 category = 'orders'
-                resp = orderAPI.put([form['doneOrderBtn'], '?status=done'])
+                resp = orderAPI.put(form['doneOrderBtn'], params={'status': 'done'})
                 if not resp['success']:
                     err['add_data']['orders'] = resp['message']
             elif 'deleteUserBtn' in form:
                 category = 'users'
-                resp = userAPI.delete([form['deleteUserBtn']])
+                resp = userAPI.delete(form['deleteUserBtn'])
                 if not resp['success']:
                     err['add_data']['users'] = resp['message']
             data = D.get_data(base_req=True, lk_admin_req=True)
@@ -1806,10 +1819,10 @@ def user_basket():
     if request.method == "POST":
         form = get_request_data()
         if 'editCountGoodsBtn' in form:
-            basketAPI.put([form['editCountGoodsBtn'], "?count=" + form['countGoods']])
+            basketAPI.put(form['editCountGoodsBtn'], params={'count': form['countGoods']})
 
         if 'deleteGoodsBtn' in form:
-            api_response = basketAPI.delete([form['deleteGoodsBtn']])
+            api_response = basketAPI.delete(form['deleteGoodsBtn'])
             if not api_response['success']:
                 print("Basket delete goods error: ", api_response['message'])
 
@@ -1828,7 +1841,7 @@ def make_order():
 
     if request.method == "POST":
         if 'finishBtn' in request.form:
-            api_response = orderAPI.post(['curr'])
+            api_response = orderAPI.post('curr')
             if api_response['success']:
                 data = D.get_base_data()
                 data['message'] = "Заказ №{} успешно создан. " \
@@ -1922,6 +1935,6 @@ if __name__ == '__main__':
     api.add_resource(UserAPI, '/users/<path:r>')
     api.add_resource(GoodsAPI, '/goods/<path:r>')
     api.add_resource(BasketAPI, '/basket/<path:r>')
-    api.add_resource(OrderAPI, '/order/<path:r>')
+    api.add_resource(OrderAPI, '/orders/<path:r>')
 
     app.run(port=PORT, host=HOST)
