@@ -1,8 +1,8 @@
-# для проверки
+﻿# для проверки
 
 Пользователи (логин:пароль) {
     aaa: qwerty
-    han: qwerty
+    bbb: qwerty
 }
 Админ {
     admin: admin

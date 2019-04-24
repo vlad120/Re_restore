@@ -1,5 +1,5 @@
-"""
-    Version 1.0.1 (24.04.2019)
+﻿"""
+    Version 1.0.2 (24.04.2019)
     Mironov Vladislav
 """
 
@@ -693,6 +693,10 @@ class UserAPI(Resource):
             try:
                 user = UserModel.query.filter_by(id=user_id).first()
                 if user:
+                    # удаляем фото профиля
+                    photo = 'static/profiles/{}.png'.format(arg)
+                    if path.exists(photo):
+                        remove(photo)
                     # удаляем все заказы пользователя
                     for order in OrderModel.query.filter_by(user_id=user_id).all():
                         db.session.delete(order)
@@ -1627,10 +1631,10 @@ def sign_in(page, t, data, ready_data=None):
         a = get_authorization(tmp_login=request.form['login'], tmp_password=request.form['password'], img=True)
         if page in ('sign-up.html', 'lk.html'):
             if verify_curr_admin(a):
-                data = D.get_data(base_req=True, lk_admin_req=True, tmp_a=a)
+                data = D.get_data(base_req=True, lk_admin_req=True, a=a)
                 page = 'lk-admin.html'
             else:
-                data = D.get_data(base_req=True, lk_req=True, tmp_a=a)
+                data = D.get_data(base_req=True, lk_req=True, a=a)
                 page = 'lk.html'
         if not data:
             return error()

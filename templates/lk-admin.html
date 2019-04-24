@@ -1,4 +1,4 @@
-{% extends "Base.html" %}
+﻿{% extends "Base.html" %}
 
 {% block style %}
     <style type="text/css">
@@ -29,6 +29,7 @@
             font-size: 18px;
             color: seagreen;
         }
+        .btn-delete-goods { margin-top: 10px; }
         .status {
             float: right;
             padding-right: 20px;
@@ -80,7 +81,7 @@
                                 <div class="card-body">
                                     <p class="card-text">{{ item['short_description'] }}</p>
                                     <form method="post">
-                                        <button type="submit" class="btn btn-dark" name="deleteGoodsBtn" value="{{ item['id'] }}">Удалить</button>
+                                        <button type="submit" class="btn btn-dark btn-delete-goods" name="deleteGoodsBtn" value="{{ item['id'] }}">Удалить</button>
                                     </form>
                                 </div>
                             </div>
