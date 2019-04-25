@@ -856,6 +856,9 @@ class GoodsAPI(Resource):
                 if request_data:
                     args.update(request_data)
 
+                if not any([args[i] for i in args]):
+                    return make_success(message="Empty request", errors=errors)
+
                 for i in args:
                     if type(args[i]) is str:
                         args[i] = args[i].strip(' /')
