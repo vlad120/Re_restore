@@ -1,5 +1,5 @@
 ﻿"""
-    Version 1.0.3 (25.04.2019)
+    Version 1.1.0 (28.04.2019)
     Mironov Vladislav
 """
 
@@ -29,14 +29,10 @@ def get_authorization(tmp_login=None, tmp_password=None, img=False, params=None)
         tmp-аргументы - когда надо получить временную авторизацию (если cookie ещё не настроены);
         params - из получение данных от параметров для API (формат: {'authorization': 'login;password'}).
     """
-    if params and type(params) == dict and 'authorization' in params:
-        if params['authorization']:
-            if type(params['authorization']) is list:
-                params['authorization'] = params['authorization'][0]
-            try:
-                tmp_login, tmp_password = (i.strip() for i in params['authorization'].split(';'))
-            except:
-                pass
+    check_need = False
+    if params and type(params) is dict and 'login' in params and 'password' in params:
+        tmp_login, tmp_password = params['login'], params['password']
+        check_need = True
 
     tmp = tmp_login and tmp_password
     a = {'login': tmp_login if tmp else request.cookies.get('userLogin'),
@@ -50,6 +46,9 @@ def get_authorization(tmp_login=None, tmp_password=None, img=False, params=None)
         a['id'] = ADMIN_ID
         a['admin_authorization'] = True
     else:
+        a['id'], a['login'], a['password'] = None, None, None
+
+    if check_need and not verify_authorization(a=a):
         a['id'], a['login'], a['password'] = None, None, None
 
     if img and a['id']:
@@ -149,7 +148,7 @@ class GoodsModel(db.Model):
             if c:
                 d['full_category'] = c.to_dict()
         if full_link_req:
-            d['full_link'] = '{}/{}/{}'.format(HOME, self.category.strip(' /'), self.id)
+            d['full_link'] = '/{}/{}'.format(self.category.strip(' /'), self.id)
         if photo_req:
             photos = self.photos.strip(';').split(';')
             if len(photos) == 1 and photos[0] == NO_GOODS_PHOTO:
@@ -182,7 +181,7 @@ class CategoryModel(db.Model):
         if rus_name_req:
             d['rus_name'] = self.rus_name
         if link_req:
-            d['link'] = HOME + '/' + self.name
+            d['link'] = '/' + self.name.strip('/')
         return d
 
 
@@ -1307,7 +1306,8 @@ class BasketAPI(Resource):
         arg = str(r).lower().strip(' /')
         if arg.isdigit():
             try:
-                if not GoodsModel.query.filter_by(id=arg).first():
+                goods = GoodsModel.query.filter_by(id=arg).first()
+                if not goods:
                     return make_success(False, message="Goods doesn't exist")
                 # проверка авторизации (админу добавлять товары в корзину нельзя)
                 if a and a['id'] != ADMIN_ID:
@@ -1315,9 +1315,14 @@ class BasketAPI(Resource):
                     if not user:
                         return make_success(False, message="User not found")
                     if arg in [[k for k in g][0] for g in user.basket['basket']]:
-                        return make_success(False, message="Goods has already added")
+                        return make_success(False, message="Goods has already added", count=goods.count)
                     basket = user.basket['basket'][:]
-                    basket.append({str(arg): (int(params['count']) if 'count' in params else 1)})
+                    if 'count' in params:
+                        if goods.count < params['count']:
+                            return make_success(False, message="Count is more then original")
+                        basket.append({str(arg): int(params['count'])})
+                    else:
+                        basket.append({str(arg): 1})
                     user.basket = {"basket": basket}
                     db.session.commit()
                     return make_success()
@@ -1514,7 +1519,7 @@ class OrderAPI(Resource):
         return make_success(False, message='Bad request')
 
 
-@app.route('/re_restore', methods=["GET", "POST"])
+@app.route('/', methods=["GET", "POST"])
 def re_restore():
     t = 'Добро пожаловать в Re_restore!'
     data = D.get_data(base_req=True, main_req=True)
@@ -1537,16 +1542,21 @@ def re_restore():
             return render('index.html', title=t, data=data)
 
 
-@app.route('/re_restore/<string:category>', methods=["GET", "POST"])
+@app.route('/<string:category>', methods=["GET", "POST"])
 def goods_category(category):
     data = D.get_base_data()
     data['sorting'] = request.cookies.get('sorting')
     if not data['sorting']:
         data['sorting'] = 'NEW'
+
     api_response = goodsAPI.get('category', params={'category': category, 'sort': data['sorting']})
-    if api_response['success']:
-        data['goods'] = api_response['goods']
-        data['full_category'] = api_response['category']
+    if not api_response['success']:
+        if not CategoryModel.query.filter_by(name=category).first():
+            return not_found()
+        return server_error()
+
+    data['goods'] = api_response['goods']
+    data['full_category'] = api_response['category']
 
     t = api_response['category']['rus_name']
 
@@ -1577,7 +1587,7 @@ def goods_category(category):
     return render('goods-category.html', title=t, data=data)
 
 
-@app.route('/re_restore/<string:category>/<int:goods_id>', methods=["GET", "POST"])
+@app.route('/<string:category>/<int:goods_id>', methods=["GET", "POST"])
 def full_goods(category, goods_id):
     data = D.get_base_data()
     if not data:
@@ -1607,7 +1617,7 @@ def full_goods(category, goods_id):
     return render('goods.html', title=t, data=data)
 
 
-@app.route('/re_restore/goods-admin/<int:goods_id>', methods=["GET", "POST"])
+@app.route('/goods-admin/<int:goods_id>', methods=["GET", "POST"])
 def full_goods_admin(goods_id):
     if not verify_curr_admin():
         return access_error()
@@ -1672,7 +1682,7 @@ def sign_in(page, t, data, ready_data=None):
 
 @app.route('/sign-out')
 def sign_out():
-    resp = make_response(redirect(HOME))
+    resp = make_response(redirect('/'))
     for cookie in ('userID', 'userLogin', 'userPassword'):
         resp.set_cookie(cookie, '', expires=0)
     return resp
@@ -1745,7 +1755,7 @@ def lk():
             if not data:
                 return server_error()
         return render("lk.html", title=t, data=data)
-    return redirect(HOME)
+    return redirect('/')
 
 
 @app.route('/lk-admin', methods=["GET", "POST"])
@@ -1813,7 +1823,7 @@ def lk_admin():
         return render("lk-admin.html", title=t, data=data)
     elif verify_authorization():
         return redirect('/lk')
-    return redirect(HOME)
+    return redirect('/')
 
 
 @app.route('/basket', methods=["GET", "POST"])
@@ -1880,10 +1890,9 @@ def server_error(err=None, message=''):
     return error(500, 'Ошибка сервера :(\n{}'.format(message))
 
 
-@app.route('/')
 @app.route('/index')
 def index():
-    return redirect(HOME)
+    return redirect('/')
 
 
 def render(template, a=None, **kwargs):
@@ -1913,7 +1922,6 @@ def get_request_data(files=False):
     return form
 
 
-HOME = '/re_restore'
 HOST = '127.0.0.1'
 PORT = 8080
 
@@ -1934,10 +1942,10 @@ D = DataTemplate()
 if __name__ == '__main__':
     db.create_all()
 
-    api.add_resource(AuthorizationAPI, '/authorization')
-    api.add_resource(UserAPI, '/users/<path:r>')
-    api.add_resource(GoodsAPI, '/goods/<path:r>')
-    api.add_resource(BasketAPI, '/basket/<path:r>')
-    api.add_resource(OrderAPI, '/orders/<path:r>')
+    api.add_resource(AuthorizationAPI, '/authorizationAPI')
+    api.add_resource(UserAPI, '/usersAPI/<path:r>')
+    api.add_resource(GoodsAPI, '/goodsAPI/<path:r>')
+    api.add_resource(BasketAPI, '/basketAPI/<path:r>')
+    api.add_resource(OrderAPI, '/ordersAPI/<path:r>')
 
     app.run(port=PORT, host=HOST)
