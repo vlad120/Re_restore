@@ -48,7 +48,7 @@
 
 {% block content %}
     {% if authorization['admin_authorization'] %}
-        <a href="/re_restore/goods-admin/{{ data['goods']['id'] }}" class="btn btn-success btn-edit content">Редактировать</a>
+        <a href="/goods-admin/{{ data['goods']['id'] }}" class="btn btn-success btn-edit content">Редактировать</a>
     {% endif %}
     <h5 class="content">
         <a href="{{ data['goods']['full_category']['link'] }}"

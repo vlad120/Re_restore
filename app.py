@@ -1,5 +1,5 @@
 ﻿"""
-    Version 1.2.0 (28.04.2019)
+    Version 1.2.1 (29.04.2019)
     Mironov Vladislav
 """
 
@@ -10,7 +10,11 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from os import remove, listdir, makedirs, rmdir, path, rename
 from shutil import copyfile
 from json import loads, dumps
+from random import randrange
+import logging
 
+
+logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s')
 
 app = Flask(__name__)
 api = Api(app)
@@ -55,6 +59,7 @@ def get_authorization(tmp_login=None, tmp_password=None, img=False, params=None)
         user = UserModel.query.filter_by(id=a['id']).first()
         if user:
             a.update(user.to_dict(photo_req=True))
+            a['photo'] = a['photo']
         else:
             a['photo'] = '/static/profiles/NoPhoto.jpg'
     return a
@@ -291,7 +296,7 @@ class DataTemplate:
                 data['errors']['order'] = t['errors']['order']
             return data
         except Exception as e:
-            print("Data template get Error:\t", e)
+            logging.error("Data template get Error:\t{}".format(e))
             return None
 
     def get_base_data(self, anyway=False):
@@ -310,7 +315,7 @@ class DataTemplate:
                                                'login': ''}}
                     }
         except Exception as e:
-            print("Get base data template Error: ", e)
+            logging.error("Get base data template Error:\t{}".format(e))
             if anyway:
                 return {'menu_items': [],
                         'len_basket': None,
@@ -335,7 +340,7 @@ class DataTemplate:
                         'goods': goods
                         }
         except Exception as e:
-            print("Get main data template Error: ", e)
+            logging.error("Get main data template Error:\t{}".format(e))
 
     def get_lk_data(self, a=None):
         try:
@@ -354,7 +359,7 @@ class DataTemplate:
                                    'edit_order': None},
                         }
         except Exception as e:
-            print("Get lk data template Error: ", e)
+            logging.error("Get lk data template Error:\t{}".format(e))
 
     def get_lk_admin_data(self, a=None):
         try:
@@ -378,7 +383,7 @@ class DataTemplate:
                 data['last']['add_goods'][i] = ''
             return data
         except Exception as e:
-            print("Get lk-admin data template Error: ", e)
+            logging.error("Get lk-admin data template Error:\t{}".format(e))
 
     def get_registration_data(self):
         try:
@@ -390,7 +395,7 @@ class DataTemplate:
                 data['last']['registration'][i] = ''
             return data
         except Exception as e:
-            print("Get registration data template Error: ", e)
+            logging.error("Get registration data template Error:\t{}".format(e))
 
     def get_edit_goods_data(self):
         return {'errors': {'edit_goods': {'rus_category': None,
@@ -417,7 +422,7 @@ class DataTemplate:
                     return {'basket_data': {'goods': goods,
                                             'total': sum(g['price'] * g['count'] for g in goods)}}
             except Exception as e:
-                print("Get basket data template Error: ", e)
+                logging.error("Get basket data template Error:\t{}".format(e))
                 return {}
 
     def get_order_data(self, a=None):
@@ -436,7 +441,7 @@ class DataTemplate:
                             'errors': {'order': None}
                             }
             except Exception as e:
-                print("Get basket data template Error: ", e)
+                logging.error("Get basket data template Error:\t{}".format(e))
                 return {}
 
 
@@ -479,7 +484,7 @@ class AuthorizationAPI(Resource):
             else:
                 errors['login'] = "Логин не найден в системе."
         except Exception as e:
-            print("AuthorizationAPI Error:\t", e)
+            logging.error("AuthorizationAPI Error:\t{}".format(e))
             errors['other'] = "Ошибка сервера."
         return make_success(False, errors=errors)
 
@@ -546,7 +551,7 @@ class AuthorizationAPI(Resource):
 
             return make_success(new_user.id, errors=errors)
         except Exception as e:
-            print("RegistrationAPI Error:\t", e)
+            logging.error("RegistrationAPI Error:\t{}".format(e))
             errors['other'] = "Ошибка сервера."
             return make_success(False, message="Server error", errors=errors)
 
@@ -580,7 +585,7 @@ class UserAPI(Resource):
                                                      email_req=True, login_req=True) for i in
                                            UserModel.query.all()])
             except Exception as e:
-                print('UserAPI Error (get all): ', e)
+                logging.error("UserAPI Error (get all):\t{}".format(e))
                 return make_success(False, message='Server Error')
         return make_success(False, message='Bad request')
 
@@ -622,12 +627,12 @@ class UserAPI(Resource):
                         if ext.lower() in ['png', 'jpg', 'jpeg']:
                             photo_name = '{}.{}'.format(user.id, 'png')
                             args['photo'].save('static/profiles/' + photo_name)
-                            user.photo = photo_name
+                            user.photo = photo_name + '?' + str(randrange(1000000000))
                             db.session.commit()
                         else:
                             raise TypeError
                     except Exception as e:
-                        print("Save photo (change user info) Error:\t", e)
+                        logging.error("Save photo (change user info) Error:\t{}".format(e))
                         if photo_name:
                             remove(photo_name)
                             errors['photo'] = "Ошибка при загрузке фото."
@@ -674,7 +679,7 @@ class UserAPI(Resource):
                 db.session.commit()
                 return make_success(errors=errors)
             except Exception as e:
-                print("Change user info Error:\t", e)
+                logging.error("Change user info Error:\t{}".format(e))
                 return make_success(False, 'Server error')
 
         return make_success(False, 'Bad request')
@@ -705,7 +710,7 @@ class UserAPI(Resource):
                     return make_success()
                 return make_success(False, message="User {} doesn't exist".format(user_id))
             except Exception as e:
-                print("User delete Error:\t", e)
+                logging.error("User delete Error:\t{}".format(e))
                 return make_success(False, message="Server Error")
 
         return make_success(False, message='Bad request')
@@ -738,7 +743,7 @@ class GoodsAPI(Resource):
                                                                  full_category_req=True,
                                                                  full_link_req=True)})
             except Exception as e:
-                print("GoodsAPI Error (get {}): ".format(goods_id), e)
+                logging.error("GoodsAPI Error (get {}):\t{}".format(goods_id, e))
                 return make_success(False, message='Server Error')
 
         # краткая информация обо всех товарах для админа
@@ -748,7 +753,7 @@ class GoodsAPI(Resource):
                     return make_success(goods=[i.to_dict(full_link_req=True, short_description_req=True)
                                                for i in reversed(GoodsModel.query.all())])
                 except Exception as e:
-                    print("GoodsAPI Error (get all): ", e)
+                    logging.error("GoodsAPI Error (get all):\t{}".format(e))
                     return make_success(False, message='Server Error')
             return make_success(False, message='Access Error')
 
@@ -765,7 +770,7 @@ class GoodsAPI(Resource):
                                        short_description_req=True) for g in list(goods)[:n])
                 return make_success(goods=goods)
             except Exception as e:
-                print("GoodsAPI Error (get random): ", e)
+                logging.error("GoodsAPI Error (get random):\t{}".format(e))
                 return make_success(False, message='Server Error')
 
         # все товары данной категории
@@ -789,7 +794,7 @@ class GoodsAPI(Resource):
                                                            count_req=True) for i in goods])),
                                         category=category.to_dict())
                 except Exception as e:
-                    print("GoodsAPI Error (get category {}): ".format(arg), e)
+                    logging.error("GoodsAPI Error (get category {}):\t{}".format(arg, e))
                     return make_success(False, message='Server Error')
 
         return make_success(False, message='Bad request')
@@ -820,15 +825,16 @@ class GoodsAPI(Resource):
                         if not old_category_folder_items:
                             rmdir(old_category_folder)
             except Exception as e:
-                print("GoodsAPI Error "
-                      "(move folder while edit goods {} category): {}".format(goods.id, e))
+                logging.error("GoodsAPI Error "
+                              "(move folder while edit goods {} category):\t{}".format(goods.id, e))
                 errors['category'] = "Move folder error"
             if not e:
                 try:
                     if not path.exists(new_folder):
                         makedirs(folder)
-                        print("GoodsAPI Error "
-                              "(folder wasn't created while edit goods {} category) - solved!".format(goods.id))
+                        logging.info("GoodsAPI Error "
+                                     "(folder wasn't created while edit goods {} category)"
+                                     " - solved!".format(goods.id))
 
                     if len(GoodsModel.query.filter_by(category=old_category.name).all()) == 1:
                         db.session.delete(old_category)
@@ -840,8 +846,8 @@ class GoodsAPI(Resource):
                     goods.category = args['category']
                     db.session.commit()
                 except Exception as e:
-                    print("GoodsAPI Error "
-                          "(edit goods {} DB category): {}".format(goods.id, e))
+                    logging.error("GoodsAPI Error "
+                                  "(edit goods {} DB category):\t{}".format(goods.id, e))
                     errors['category'] = "Edit DB error"
             return errors
 
@@ -957,8 +963,8 @@ class GoodsAPI(Resource):
                                                                  rus_name=curr_category.rus_name)
                                     move_goods(goods, new_category)  # перемещаем данные
                     except Exception as e:
-                        print("GoodsAPI Error "
-                              "(set goods {} category while edit info): {}".format(goods.id, e))
+                        logging.error("GoodsAPI Error "
+                              "(set goods {} category while edit info):\t{}".format(goods.id, e))
                         errors['category'] = unknown_err
 
                 elif args['rus_category']:
@@ -989,8 +995,8 @@ class GoodsAPI(Resource):
                                         "защита от случайного переименования русской категории других товаров."
                                     errors['rus_category'] = m
                     except Exception as e:
-                        print("GoodsAPI Error "
-                              "(set goods {} rus category while edit info): {}".format(goods.id, e))
+                        logging.error("GoodsAPI Error "
+                                      "(set goods {} rus category while edit info):\t{}".format(goods.id, e))
                         errors['rus_category'] = unknown_err
 
                 # цены товара
@@ -1022,7 +1028,7 @@ class GoodsAPI(Resource):
                             goods.short_description = args['short_description']
                             db.session.commit()
                     except Exception as e:
-                        print("GoodsAPI Error (edit short description while edit info): ", e)
+                        logging.error("GoodsAPI Error (edit short description while edit info):\t{}".format(e))
                         errors['short_description'] = unknown_err
 
                 # Полного описания
@@ -1034,7 +1040,7 @@ class GoodsAPI(Resource):
                             goods.description = args['description']
                             db.session.commit()
                     except Exception as e:
-                        print("GoodsAPI Error (edit description while edit info): ", e)
+                        logging.error("GoodsAPI Error (edit description while edit info):\t{}".format(e))
                         errors['short_description'] = unknown_err
 
                 # удаление фото
@@ -1052,7 +1058,7 @@ class GoodsAPI(Resource):
                             goods.photos = ";".join(photos) if photos else NO_GOODS_PHOTO
                             db.session.commit()
                     except Exception as e:
-                        print("GoodsAPI Error (delete photo while edit info): ", e)
+                        logging.error("GoodsAPI Error (delete photo while edit info):\t{}".format(e))
                         errors['delete_photo'] = "Ошибка сервера при удалении фото."
 
                 # добавление фотографий
@@ -1086,19 +1092,19 @@ class GoodsAPI(Resource):
                                 else:
                                     raise TypeError
                             except Exception as e:
-                                print("GoodsAPI Error (edit info, save photo): ", e)
+                                logging.error("GoodsAPI Error (edit info, save photo):\t{}".format(e))
                                 if photo:
                                     url = '{}/{}'.format(get_folder(goods, sl=False), photo.filename)
                                     if path.exists(url):
                                         remove(url)
                                 errors['add_photo'] = "Ошибка при загрузке некоторых фото."
                     except Exception as e:
-                        print("GoodsAPI Error (load photo while edit info): ", e)
+                        logging.error("GoodsAPI Error (load photo while edit info):\t{}".format(e))
                         errors['add_photo'] = "Ошибка при загрузке фото."
                 db.session.commit()
                 return make_success(errors=errors)
             except Exception as e:
-                print("Change goods info Error:\t", e)
+                logging.error("Change goods ({}) info Error:\t{}".format(arg, e))
                 return make_success(False, 'Server error')
 
         return make_success(False, 'Bad request')
@@ -1191,7 +1197,7 @@ class GoodsAPI(Resource):
                 db.session.commit()
                 return make_success(goods.id, errors=errors)
             except Exception as e:
-                print("GoodsAPI Error (add goods): ", e)
+                logging.error("GoodsAPI Error (add goods):\t{}".format(e))
                 return make_success(False, message="Server error", errors=errors)
 
         return make_success(False, message='Bad request')
@@ -1228,7 +1234,7 @@ class GoodsAPI(Resource):
                     return make_success()
                 return make_success(False, message="Goods doesn't exist")
             except Exception as e:
-                print("Goods delete Error:\t", e)
+                logging.error("Goods delete Error:\t\t{}".format(e))
                 return make_success(False, message="Server Error")
 
         return make_success(False, message='Bad request')
@@ -1269,11 +1275,13 @@ class SearchAPI(Resource):
                     goods_name_words = {w.strip() for w in goods_name.split()}
                     # разница между (количеством слов в искомом названии) и
                     # (количеством пересечений этих слов со словами названия товара)
-                    diff = len(name_words) - len(name_words & goods_name_words)
-                    if diff < 2:
-                        consist.insert(0, goods.id)
-                    elif diff < 4:
-                        consist.append(goods.id)
+                    n = len(name_words & goods_name_words)
+                    if n:
+                        diff = len(name_words) - n
+                        if diff < 2:
+                            consist.insert(0, goods.id)
+                        elif diff < 4:
+                            consist.append(goods.id)
             # объединяем и возвращаем найденное в порядке соответствия
             if end:
                 return full + great_part + small_part + consist
@@ -1293,30 +1301,52 @@ class SearchAPI(Resource):
                     small_part.append(goods.id)
                 else:
                     description_words = {w.strip() for w in description.split()}  # множество слов в описании
-                    diff = len_text_words - len(text_words & description_words)
-                    # если разница между количеством слов в тексте
-                    # и количеством их пересечений со словами из описания маленькая
-                    # (т.е. большинство слов в тексте найдено в описании)
-                    if diff < (len_text_words // 5) * 3:
-                        consist.append(goods.id)
+                    n = len(text_words & description_words)
+                    if n:
+                        diff = len_text_words - n
+                        # если разница между количеством слов в тексте
+                        # и количеством их пересечений со словами из описания маленькая
+                        # (т.е. большинство слов в тексте найдено в описании)
+                        if diff < (len_text_words // 5) * 3:
+                            consist.append(goods.id)
             # объединяем и возвращаем найденное в порядке соответствия
             if end:
                 return full + great_part + small_part + consist
             return [full, great_part, small_part, consist]
 
+        def remove_same(lst):
+            new = []
+            for item in lst:
+                if item not in new:
+                    new.append(item)
+            return new
+
         params = params if params else dict(request.args)
         optimize_params(params)
         arg = str(r).lower().strip(' /')
+
+        # поиск по артиклу
+        if arg == 'id':
+            try:
+                if 'goods_id' not in params:
+                    return make_success(False, message="Bad request")
+                goods = GoodsModel.query.filter_by(id=params['goods_id']).first()
+                if goods:
+                    return make_success(goods=[goods.id])
+                return make_success(goods=[])
+            except Exception as e:
+                logging.error("SearchAPI Error (get by id):\t{}".format(e))
+                return make_success(False, message='Server Error')
 
         # поиск по названию
         if arg == 'name':
             try:
                 if 'name' not in params:
                     return make_success(False, message="Bad request")
-                result = by_name(params['name'], end=True)
+                result = remove_same(by_name(params['name'], end=True))
                 return make_success(goods=result)
             except Exception as e:
-                print("SearchAPI Error (get by name): ", e)
+                logging.error("SearchAPI Error (get by name):\t{}".format(e))
                 return make_success(False, message='Server Error')
 
         # поиск по описанию
@@ -1324,10 +1354,10 @@ class SearchAPI(Resource):
             try:
                 if 'description' not in params:
                     return make_success(False, message="Bad request")
-                result = by_name(params['description'], end=True)
+                result = remove_same(by_name(params['description'], end=True))
                 return make_success(goods=result)
             except Exception as e:
-                print("SearchAPI Error (get by description): ", e)
+                logging.error("SearchAPI Error (get by description):\t{}".format(e))
                 return make_success(False, message='Server Error')
 
         if arg == 'auto':
@@ -1336,6 +1366,7 @@ class SearchAPI(Resource):
                     return make_success(False, message="Bad request")
 
                 # поиск чисел
+                result0 = None
                 num = list(filter(lambda w: w.strip().isdigit(), params['text'].split()))
                 if num:
                     # совпадение числа с id товара
@@ -1351,10 +1382,11 @@ class SearchAPI(Resource):
                     result += result1[i]  # сначала всегда найденное по имени
                     result += result2[i]
                 if result0:  # если найден товар по id
-                    result.insert(0, result0)  # добавляем в начало всего найденного
+                    result.insert(0, result0.id)  # добавляем в начало всего найденного
+                result = remove_same(result)  # избавляемся от одинаковых
                 return make_success(goods=result)
             except Exception as e:
-                print("SearchAPI Error (get by all parameters): ", e)
+                logging.error("SearchAPI Error (get by all parameters):\t{}".format(e))
                 return make_success(False, message='Server Error')
 
         return make_success(False, message='Bad request')
@@ -1377,7 +1409,7 @@ class BasketAPI(Resource):
                     return make_success(basket=loads(user.basket)['basket'])
                 return make_success(False, "Authorization error")
             except Exception as e:
-                print("BassketAPI Error (get): ", e)
+                logging.error("BasketAPI Error (get):\t{}".format(e))
                 return make_success(False, message='Server Error')
 
         return make_success(False, message='Bad request')
@@ -1426,7 +1458,7 @@ class BasketAPI(Resource):
                     return make_success()
                 return make_success(False, message="Authorization error")
             except Exception as e:
-                print("BassketAPI Error (edit): ", e)
+                logging.error("BasketAPI Error (edit):\t{}".format(e))
                 return make_success(False, message='Server Error')
 
         return make_success(False, message='Bad request')
@@ -1462,7 +1494,7 @@ class BasketAPI(Resource):
                     return make_success()
                 return make_success(False, message="Authorization error")
             except Exception as e:
-                print("BassketAPI Error (add): ", e)
+                logging.error("BassketAPI Error (add):\t{}".format(e))
                 return make_success(False, message='Server Error')
 
         return make_success(False, message='Bad request')
@@ -1491,7 +1523,7 @@ class BasketAPI(Resource):
                     return make_success()
                 return make_success(False, message="Authorization error")
             except Exception as e:
-                print("BassketAPI Error (delete): ", e)
+                logging.error("BasketAPI Error (delete):\t{}".format(e))
                 return make_success(False, message='Server Error')
 
         return make_success(False, message='Bad request')
@@ -1512,7 +1544,7 @@ class OrderAPI(Resource):
             try:
                 return make_success(orders=list(reversed([i.to_dict() for i in OrderModel.query.all()])))
             except Exception as e:
-                print("OrderAPI Error (get all): ", e)
+                logging.error("OrderAPI Error (get all):\t{}".format(e))
                 return make_success(False, message='Server Error')
         # получение заказов конкретного пользователя
         if arg == 'user':
@@ -1524,7 +1556,7 @@ class OrderAPI(Resource):
                           for i in reversed(OrderModel.query.filter_by(user_id=user_id).all())]
                 return make_success(orders=orders)
             except Exception as e:
-                print("OrderAPI Error (): ", e)
+                logging.error("OrderAPI Error (get by user {}):\t{}".format(user_id, e))
                 return make_success(False, message='Server Error')
 
         return make_success(False, message='Bad request')
@@ -1586,7 +1618,7 @@ class OrderAPI(Resource):
                     return make_success(order_id=order.id)
                 return make_success(False, message="Authorization error")
             except Exception as e:
-                print("OrderAPI Error (post): ", e)
+                logging.error("OrderAPI Error (add):\t{}".format(e))
                 return make_success(False, message='Server Error')
 
         return make_success(False, message='Bad request')
@@ -1610,7 +1642,7 @@ class OrderAPI(Resource):
                     return make_success()
                 return make_success(False, message="Order doesn't exist")
             except Exception as e:
-                print("Order delete Error:\t", e)
+                logging.error("Order delete Error:\t{}".format(e))
                 return make_success(False, message="Server Error")
 
         return make_success(False, message='Bad request')
@@ -1646,7 +1678,7 @@ class OrderAPI(Resource):
                         return make_success()
                     return make_success(False, message="Order doesn't exist")
             except Exception as e:
-                print("Order put Error:\t", e)
+                logging.error("Order put Error:\t{}".format(e))
                 return make_success(False, message="Server Error")
 
         return make_success(False, message='Bad request')
@@ -1667,7 +1699,7 @@ def re_restore():
         if 'addToBasket' in request.form:
             api_response = basketAPI.post(request.form['addToBasketGoodsID'])
             if not api_response['success']:
-                print("Add to basket error: ", api_response['message'])
+                logging.error("Add to basket error:\t{}".format(api_response['massage']))
             else:
                 new_data = D.get_base_data()
                 data['len_basket'] = new_data['len_basket']
@@ -1701,7 +1733,7 @@ def goods_category(category):
         if 'addToBasket' in form:
             api_response = basketAPI.post(form['addToBasketGoodsID'])
             if not api_response['success']:
-                print("Add to basket error: ", api_response['message'])
+                logging.error("Add to basket error:\t{}".format(api_response['message']))
             else:
                 new_data = D.get_base_data()
                 data['len_basket'] = new_data['len_basket']
@@ -1743,7 +1775,7 @@ def full_goods(category, goods_id):
         if 'addToBasket' in form:
             api_response = basketAPI.post(form['addToBasketGoodsID'])
             if not api_response['success']:
-                print("Add to basket error: ", api_response['message'])
+                logging.error("Add to basket error:\t{}".format(api_response['message']))
             else:
                 new_data = D.get_base_data()
                 data['len_basket'] = new_data['len_basket']
@@ -1885,10 +1917,6 @@ def lk():
                 resp = orderAPI.put(request_data['cancelOrderBtn'], params={'status': 'cancel'})
                 if not resp['success']:
                     data['errors']['edit_order'] = resp['message']
-
-            data = D.get_data(base_req=True, lk_req=True)
-            if not data:
-                return server_error()
         return render("lk.html", title=t, data=data)
     return redirect('/')
 
@@ -1972,7 +2000,7 @@ def user_basket():
         if 'deleteGoodsBtn' in form:
             api_response = basketAPI.delete(form['deleteGoodsBtn'])
             if not api_response['success']:
-                print("Basket delete goods error: ", api_response['message'])
+                logging.error("Basket delete goods error:\t{}".format(api_response['message']))
 
     data = D.get_data(base_req=True, basket_req=True)
     if 'basket_data' not in data:
@@ -2081,4 +2109,5 @@ api.add_resource(OrderAPI, '/api/orders/<path:r>')
 api.add_resource(SearchAPI, '/api/search/<path:r>')
 
 if __name__ == '__main__':
+    # http://neo120.pythonanywhere.com/
     app.run(port=8080, host='127.0.0.1')

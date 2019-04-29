@@ -74,7 +74,7 @@
 
 
 {% block content %}
-    <a href="/re_restore/{{ data['goods']['category'] }}/{{ data['goods']['id'] }}" class="btn btn-success btn-back content">Назад к просмотру</a>
+    <a href="/{{ data['goods']['category'] }}/{{ data['goods']['id'] }}" class="btn btn-success btn-back content">Назад к просмотру</a>
     <form method="post">
         <input type="text" class="form-control rus-category-input content" name="rus_category" placeholder="Категория на русском"
                class="rus-category one-line" value="/{{ data['goods']['full_category']['rus_name'] }}">
