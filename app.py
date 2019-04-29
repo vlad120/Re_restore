@@ -1,5 +1,5 @@
 ﻿"""
-    Version 1.1.0 (28.04.2019)
+    Version 1.2.0 (28.04.2019)
     Mironov Vladislav
 """
 
@@ -9,7 +9,7 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import check_password_hash, generate_password_hash
 from os import remove, listdir, makedirs, rmdir, path, rename
 from shutil import copyfile
-from copy import deepcopy
+from json import loads, dumps
 
 
 app = Flask(__name__)
@@ -123,7 +123,7 @@ class GoodsModel(db.Model):
 
     def to_dict(self, id_req=True, name_req=True, description_req=False,
                 short_description_req=False, card_description_req=False,
-                price_req=True, count_req=False, category_req=True,
+                price_req=True, count_req=True, category_req=True,
                 full_category_req=False, full_link_req=False,
                 photo_req=False, photos_req=False):
         d = dict()
@@ -188,7 +188,7 @@ class CategoryModel(db.Model):
 class OrderModel(db.Model):
     id = db.Column(db.Integer, unique=True, primary_key=True, autoincrement=True)
     total = db.Column(db.Float, nullable=False)
-    goods = db.Column(db.JSON, nullable=False)
+    goods = db.Column(db.String, nullable=False)
     status = db.Column(db.String(10), default="processing")
     user_id = db.Column(db.Integer, db.ForeignKey('user_model.id'), nullable=False)
     user = db.relationship('UserModel', backref=db.backref('OrderModel'))
@@ -204,7 +204,7 @@ class OrderModel(db.Model):
         if total_req:
             d['total'] = self.total
         if goods_req:
-            d['goods'] = self.goods
+            d['goods'] = loads(self.goods)
         if status_req:
             d['status'] = self.status
         if user_req:
@@ -221,7 +221,7 @@ class UserModel(db.Model):
     password = db.Column(db.String(200), nullable=False)
     subscription = db.Column(db.SMALLINT, default=1)
     photo = db.Column(db.String(100), default="NoPhoto.jpg")
-    basket = db.Column(db.JSON, default={'basket': []})
+    basket = db.Column(db.String, default={'basket': []})
 
     def __repr__(self):
         return '<UserModel {} {} {} {}>'.format(self.id, self.login, self.name, self.surname)
@@ -442,7 +442,7 @@ class DataTemplate:
 
 class AuthorizationAPI(Resource):
     # Авторизация
-    def get(self, request_data=None):
+    def get(self, r=None, request_data=None):
         errors = {'already_authorized': False,
                   'password': None,
                   'login': None,
@@ -484,7 +484,7 @@ class AuthorizationAPI(Resource):
         return make_success(False, errors=errors)
 
     # Регистрация нового пользователя
-    def post(self, request_data=None):
+    def post(self, r=None, request_data=None):
         all_fields = ['name', 'surname', 'email', 'login', 'password']
         errors = dict()
         for field in all_fields + ['other']:
@@ -726,6 +726,11 @@ class GoodsAPI(Resource):
                 goods = GoodsModel.query.filter_by(id=goods_id).first()
                 if not goods:
                     return make_success(False, message="Goods {} doesn't exist".format(goods_id))
+                if 'short' in params and params['short']:
+                    return make_success(data={'goods': goods.to_dict()})
+                elif 'short_with_description' in params and params['short_with_description']:
+                    return make_success(data={'goods': goods.to_dict(short_description_req=True,
+                                                                     full_link_req=True)})
                 return make_success(data={'goods': goods.to_dict(description_req=True,
                                                                  short_description_req=True,
                                                                  photos_req=True,
@@ -756,7 +761,8 @@ class GoodsAPI(Resource):
                 # обрезка до нужного количества и
                 # преобразование каждого товара в словарь
                 goods = list(g.to_dict(photo_req=True, full_link_req=True,
-                                       card_description_req=True) for g in list(goods)[:n])
+                                       card_description_req=True,
+                                       short_description_req=True) for g in list(goods)[:n])
                 return make_success(goods=goods)
             except Exception as e:
                 print("GoodsAPI Error (get random): ", e)
@@ -1228,6 +1234,122 @@ class GoodsAPI(Resource):
         return make_success(False, message='Bad request')
 
 
+class SearchAPI(Resource):
+    """ API для поиска товаров в БД. """
+    def get(self, r, params=dict()):
+        def by_name(name, end=False):
+            name = name.lower()
+            full = []
+            great_part = []
+            small_part = []
+            consist = []
+            for goods in GoodsModel.query.all():
+                goods_name = goods.name.lower()
+                if goods_name == name:
+                    # если в наличии
+                    if goods.count > 0:
+                        full.insert(0, goods.id)  # добавляем в начало
+                    else:
+                        # при отстствии добавляем в конец
+                        full.append(goods.id)
+                elif name in goods_name:
+                    if len(goods.name) - len(name) < 10:
+                        if goods.count > 0:
+                            great_part.insert(0, goods.id)
+                        else:
+                            great_part.append(goods.id)
+                    else:
+                        if goods.count > 0:
+                            small_part.insert(0, goods.id)
+                        else:
+                            small_part.append(goods.id)
+                else:
+                    # множества слов в названиях
+                    name_words = {w.strip() for w in name.split()}
+                    goods_name_words = {w.strip() for w in goods_name.split()}
+                    # разница между (количеством слов в искомом названии) и
+                    # (количеством пересечений этих слов со словами названия товара)
+                    diff = len(name_words) - len(name_words & goods_name_words)
+                    if diff < 2:
+                        consist.insert(0, goods.id)
+                    elif diff < 4:
+                        consist.append(goods.id)
+            # объединяем и возвращаем найденное в порядке соответствия
+            if end:
+                return full + great_part + small_part + consist
+            return [full, great_part, small_part, consist]
+
+        def by_description(text, end=False):
+            text = text.lower()
+            full = []
+            great_part = []
+            small_part = []
+            consist = []
+            text_words = {w.strip() for w in text.split()}  # множество слов в тексте
+            len_text_words = len(text_words)
+            for goods in GoodsModel.query.all():
+                description = (goods.short_description + ' ' + goods.description).lower()
+                if text in description:
+                    small_part.append(goods.id)
+                else:
+                    description_words = {w.strip() for w in description.split()}  # множество слов в описании
+                    diff = len_text_words - len(text_words & description_words)
+                    # если разница между количеством слов в тексте
+                    # и количеством их пересечений со словами из описания маленькая
+                    # (т.е. большинство слов в тексте найдено в описании)
+                    if diff < (len_text_words // 5) * 3:
+                        consist.append(goods.id)
+            # объединяем и возвращаем найденное в порядке соответствия
+            if end:
+                return full + great_part + small_part + consist
+            return [full, great_part, small_part, consist]
+
+        params = params if params else dict(request.args)
+        optimize_params(params)
+        arg = str(r).lower().strip(' /')
+
+        # поиск по названию
+        if arg == 'name':
+            try:
+                if 'name' not in params:
+                    return make_success(False, message="Bad request")
+                result = by_name(params['name'], end=True)
+                return make_success(goods=result)
+            except Exception as e:
+                print("SearchAPI Error (get by name): ", e)
+                return make_success(False, message='Server Error')
+
+        # поиск по описанию
+        if arg == 'description':
+            try:
+                if 'description' not in params:
+                    return make_success(False, message="Bad request")
+                result = by_name(params['description'], end=True)
+                return make_success(goods=result)
+            except Exception as e:
+                print("SearchAPI Error (get by description): ", e)
+                return make_success(False, message='Server Error')
+
+        if arg == 'auto':
+            try:
+                if 'text' not in params:
+                    return make_success(False, message="Bad request")
+                # получение результов поиска по разным критериям
+                result1 = by_name(params['text'])  # по названию
+                result2 = by_description(params['text'])  # по всему описанию
+                result = []
+                # объединение всех результатов в порядке их соответствия запросу
+                for i in range(4):
+                    result += result1[i]  # сначала всегда найденное по имени
+                    result += result2[i]
+                return make_success(goods=result)
+            except Exception as e:
+                print("SearchAPI Error (get by all parameters): ", e)
+                return make_success(False, message='Server Error')
+
+        return make_success(False, message='Bad request')
+
+
 class BasketAPI(Resource):
     """ API для получения корзины, реадктирования / добавления / удаления товаров в ней. """
     def get(self, r, a=None, params=dict()):
@@ -1242,7 +1364,7 @@ class BasketAPI(Resource):
                     user = UserModel.query.filter_by(id=a['id']).first()
                     if not user:
                         return make_success(False, message="User not found")
-                    return make_success(basket=user.basket['basket'])
+                    return make_success(basket=loads(user.basket)['basket'])
                 return make_success(False, "Authorization error")
             except Exception as e:
                 print("BassketAPI Error (get): ", e)
@@ -1266,27 +1388,28 @@ class BasketAPI(Resource):
                     if not user:
                         return make_success(False, message="User not found")
 
-                    names = [[k for k in g][0] for g in user.basket['basket']]
+                    basket = loads(user.basket)
+                    names = [[k for k in g][0] for g in basket['basket']]
                     if arg not in names:
                         return make_success(False, message="Goods is not in basket")
+
                     # изменение количества товара в корзине
                     if 'count' in params and (params['count'] == 'all' or
                                               (params['count'].isdigit() and int(params['count']) > 0)):
                         goods = GoodsModel.query.filter_by(id=arg).first()
                         count = int(params['count']) if params['count'].isdigit() else goods.count
-                        basket = deepcopy(user.basket['basket'])
                         if not goods:
-                            basket[names.index(arg)].pop(arg)
-                            user.basket = {'basket': basket}
+                            basket['basket'][names.index(arg)].pop(arg)
+                            user.basket = dumps(basket)
                             db.session.commit()
                             return make_success(False, message="Goods doesn't exist")
                         if count > goods.count:
-                            basket[names.index(arg)][arg] = goods.count
-                            user.basket = {'basket': basket}
+                            basket['basket'][names.index(arg)][arg] = goods.count
+                            user.basket = dumps(basket)
                             db.session.commit()
                             return make_success(False, message="Value is more than goods count")
-                        basket[names.index(arg)][arg] = count
-                        user.basket = {'basket': basket}
+                        basket['basket'][names.index(arg)][arg] = count
+                        user.basket = dumps(basket)
                         db.session.commit()
                     else:
                         return make_success(False, message="Count error")
@@ -1314,16 +1437,17 @@ class BasketAPI(Resource):
                     user = UserModel.query.filter_by(id=a['id']).first()
                     if not user:
                         return make_success(False, message="User not found")
-                    if arg in [[k for k in g][0] for g in user.basket['basket']]:
+                    basket = loads(user.basket)
+                    if arg in [[k for k in g][0] for g in basket['basket']]:
                         return make_success(False, message="Goods has already added", count=goods.count)
-                    basket = user.basket['basket'][:]
                     if 'count' in params:
-                        if goods.count < params['count']:
+                        count = int(params['count'])
+                        if goods.count < count:
                             return make_success(False, message="Count is more then original")
-                        basket.append({str(arg): int(params['count'])})
+                        basket['basket'].append({str(arg): count})
                     else:
-                        basket.append({str(arg): 1})
-                    user.basket = {"basket": basket}
+                        basket['basket'].append({str(arg): 1})
+                    user.basket = dumps(basket)
                     db.session.commit()
                     return make_success()
                 return make_success(False, message="Authorization error")
@@ -1347,12 +1471,12 @@ class BasketAPI(Resource):
                     user = UserModel.query.filter_by(id=a['id']).first()
                     if not user:
                         return make_success(False, message="User not found")
-                    names = [[k for k in g][0] for g in user.basket['basket']]
+                    basket = loads(user.basket)
+                    names = [[k for k in g][0] for g in basket['basket']]
                     if arg not in names:
                         return make_success(False, message="Goods is not in basket")
-                    basket = user.basket['basket'][:]
-                    del basket[names.index(arg)]
-                    user.basket = {'basket': basket}
+                    del basket['basket'][names.index(arg)]
+                    user.basket = dumps(basket)
                     db.session.commit()
                     return make_success()
                 return make_success(False, message="Authorization error")
@@ -1382,16 +1506,16 @@ class OrderAPI(Resource):
                 return make_success(False, message='Server Error')
         # получение заказов конкретного пользователя
         if arg == 'user':
-            if 'user_id' in params:
-                if not verify_authorization(admin=True, a=a):
-                    return make_success(False, message='Access Error')
-                try:
-                    orders = [i.to_dict()
-                              for i in reversed(OrderModel.query.filter_by(user_id=params['user_id']).all())]
-                    return make_success(orders=orders)
-                except Exception as e:
-                    print("OrderAPI Error (): ", e)
-                    return make_success(False, message='Server Error')
+            if not verify_authorization(admin=True, a=a):
+                return make_success(False, message='Access Error')
+            user_id = params['user_id'] if 'user_id' in params else a['id']
+            try:
+                orders = [i.to_dict()
+                          for i in reversed(OrderModel.query.filter_by(user_id=user_id).all())]
+                return make_success(orders=orders)
+            except Exception as e:
+                print("OrderAPI Error (): ", e)
+                return make_success(False, message='Server Error')
 
         return make_success(False, message='Bad request')
 
@@ -1413,9 +1537,10 @@ class OrderAPI(Resource):
                     api_response = basketAPI.get('curr')
                     if not api_response['success'] or not api_response['basket']:
                         return make_success(False, message="Basket get data error")
-                    # обработка в удобный вид кортежей [(id, count), ...]
+                    # обработка в удобный вид кортежей [(goods_id, count), ...]
                     basket = [[(int(i), int(g[i])) for i in g][0] for g in api_response['basket']]
-                    goods = [goodsAPI.get(g[0])['data']['goods'] for g in basket]
+                    goods = [GoodsModel.query.filter_by(id=g[0]).first().to_dict(full_link_req=True)
+                             for g in basket]
                     errs = []
                     for i in range(len(goods)):
                         # проверка на наличие требуемого количества товаров
@@ -1437,13 +1562,11 @@ class OrderAPI(Resource):
                             goods[i]['count'] = basket[i][1]
                     if errs:
                         return make_success(False, message="Goods count error", goods=errs)
-                    order = OrderModel(goods=goods,
+                    order = OrderModel(goods=dumps(goods),
                                        total=sum(g['price'] * g['count'] for g in goods),
                                        user_id=user.id)
                     db.session.add(order)
-                    db.session.commit()
-                    user.basket = {'basket': []}
-                    db.session.commit()
+                    user.basket = dumps({'basket': []})  # опустошаем корзину
                     # перебираем заказанные товары
                     for g in goods:
                         db_goods = GoodsModel.query.filter_by(id=g['id']).first()
@@ -1589,6 +1712,8 @@ def goods_category(category):
 
 @app.route('/<string:category>/<int:goods_id>', methods=["GET", "POST"])
 def full_goods(category, goods_id):
+    if not CategoryModel.query.filter_by(name=category).first():
+        return not_found()
     data = D.get_base_data()
     if not data:
         return server_error()
@@ -1922,13 +2047,13 @@ def get_request_data(files=False):
     return form
 
 
-HOST = '127.0.0.1'
-PORT = 8080
-
 # данные админа
 ADMIN_ID = -1
 ADMIN_LOGIN = "admin"
 ADMIN_PASSWORD = "admin"
+
+D = DataTemplate()
+db.create_all()
 
 # Все API
 userAPI = UserAPI()
@@ -1937,15 +2062,13 @@ basketAPI = BasketAPI()
 orderAPI = OrderAPI()
 authorizationAPI = AuthorizationAPI()
 
-D = DataTemplate()
+# подключение API
+api.add_resource(AuthorizationAPI, '/api/authorization/<path:r>')
+api.add_resource(UserAPI, '/api/users/<path:r>')
+api.add_resource(GoodsAPI, '/api/goods/<path:r>')
+api.add_resource(BasketAPI, '/api/basket/<path:r>')
+api.add_resource(OrderAPI, '/api/orders/<path:r>')
+api.add_resource(SearchAPI, '/api/search/<path:r>')
 
 if __name__ == '__main__':
-    db.create_all()
-
-    api.add_resource(AuthorizationAPI, '/authorizationAPI')
-    api.add_resource(UserAPI, '/usersAPI/<path:r>')
-    api.add_resource(GoodsAPI, '/goodsAPI/<path:r>')
-    api.add_resource(BasketAPI, '/basketAPI/<path:r>')
-    api.add_resource(OrderAPI, '/ordersAPI/<path:r>')
-
-    app.run(port=PORT, host=HOST)
+    app.run(port=8080, host='127.0.0.1')
