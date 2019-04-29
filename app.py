@@ -1334,14 +1334,24 @@ class SearchAPI(Resource):
             try:
                 if 'text' not in params:
                     return make_success(False, message="Bad request")
+
+                # поиск чисел
+                num = list(filter(lambda w: w.strip().isdigit(), params['text'].split()))
+                if num:
+                    # совпадение числа с id товара
+                    result0 = GoodsModel.query.filter_by(id=num[0]).first()
+
                 # получение результов поиска по разным критериям
                 result1 = by_name(params['text'])  # по названию
                 result2 = by_description(params['text'])  # по всему описанию
                 result = []
+
                 # объединение всех результатов в порядке их соответствия запросу
                 for i in range(4):
                     result += result1[i]  # сначала всегда найденное по имени
                     result += result2[i]
+                if result0:  # если найден товар по id
+                    result.insert(0, result0)  # добавляем в начало всего найденного
                 return make_success(goods=result)
             except Exception as e:
                 print("SearchAPI Error (get by all parameters): ", e)
