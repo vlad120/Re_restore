@@ -14,6 +14,12 @@
                 DELETE:     '<goods_id>'  -  удаление товара и всех его данных (обязательна авторизация админа).
 
 
+    'search':   GET         'id'          -  поиск товаров по их артикулу (id), параметр - 'id'
+                            'name'        -  по имени, параметр - 'name'
+                            'description' -  по описанию, параметр - 'description'
+                            'auto'        -  автоматический поиск по всем параметрам, параметр - 'text'
+
+
     'basket':   GET:        'curr'        -  получение корзины текущего пользователя, включая товары и итоговую сумму (обязательна авторизация).
                 POST:       '<goods_id>'  -  добавление товара в корзину пользователя.
                 PUT:        '<goods_id>'  -  изменение количества товара в корзине, обязательный параметр количества 'count': (число | 'all') (обязательна авторизация).
@@ -33,6 +39,9 @@
 
 // Там, где необходима авторизация, к параметрам добавляем 'authorization=login;password', где 'login' - логин пользователя, 'password' - пароль.
 
-// Примеры запроса:     GET 'http://127.0.0.1:8080/goods/4/?authorization=aaa;qwerty'
-                        GET 'http://127.0.0.1:8080/goods/all/?authorization=admin;admin'
-                        PUT 'http://127.0.0.1:8080/users/9/?authorization=admin;admin&email=someemail@mail.ru&check_password=qwerty'
+// Формат запроса: "<адрес к серверу>/api/<название api>/<запрос>"
+
+// Примеры запроса:     GET 'http://127.0.0.1:8080/api/goods/4'
+                        GET 'http://127.0.0.1:8080/api/goods/all/?authorization=admin;admin'
+                        GET 'http://127.0.0.1:8080/api/search/auto/?text=ipad'
+                        PUT 'http://127.0.0.1:8080/api/users/9/?authorization=admin;admin&email=someemail@mail.ru&check_password=qwerty'
