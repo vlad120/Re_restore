@@ -1,5 +1,5 @@
 ﻿"""
-    Version 1.2.1 (29.04.2019)
+    Version 1.3.0 (03.05.2019)
     Mironov Vladislav
 """
 
@@ -14,7 +14,7 @@ from random import randrange
 import logging
 
 
-logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
 app = Flask(__name__)
 api = Api(app)
@@ -52,7 +52,7 @@ def get_authorization(tmp_login=None, tmp_password=None, img=False, params=None)
     else:
         a['id'], a['login'], a['password'] = None, None, None
 
-    if check_need and not verify_authorization(a=a):
+    if check_need and not verify_authorization(a=a, admin=True):
         a['id'], a['login'], a['password'] = None, None, None
 
     if img and a['id']:
@@ -790,8 +790,7 @@ class GoodsAPI(Resource):
                     return make_success(goods=list(filter(lambda g: g['count'] > 0,
                                                           [i.to_dict(full_link_req=True,
                                                            card_description_req=True,
-                                                           photo_req=True,
-                                                           count_req=True) for i in goods])),
+                                                           photo_req=True) for i in goods])),
                                         category=category.to_dict())
                 except Exception as e:
                     logging.error("GoodsAPI Error (get category {}):\t{}".format(arg, e))
@@ -1242,7 +1241,9 @@ class GoodsAPI(Resource):
 
 class SearchAPI(Resource):
     """ API для поиска товаров в БД. """
-    def get(self, r, params=dict()):
+    def get(self, r, a=None, params=dict()):
+        symbols = ' ,.;:"\'!@#$%^&*()'
+
         def by_name(name, end=False):
             name = name.lower()
             full = []
@@ -1262,30 +1263,30 @@ class SearchAPI(Resource):
                     if len(goods.name) - len(name) < 10:
                         if goods.count > 0:
                             great_part.insert(0, goods.id)
-                        else:
+                        elif a['admin_authorization']:
                             great_part.append(goods.id)
-                    else:
+                    elif name in [w.strip(symbols) for w in goods_name.split()]:
                         if goods.count > 0:
                             small_part.insert(0, goods.id)
-                        else:
+                        elif a['admin_authorization']:
                             small_part.append(goods.id)
                 else:
                     # множества слов в названиях
-                    name_words = {w.strip() for w in name.split()}
-                    goods_name_words = {w.strip() for w in goods_name.split()}
+                    name_words = {w.strip(symbols) for w in name.split()}
+                    goods_name_words = {w.strip(symbols) for w in goods_name.split()}
                     # разница между (количеством слов в искомом названии) и
                     # (количеством пересечений этих слов со словами названия товара)
                     n = len(name_words & goods_name_words)
                     if n:
                         diff = len(name_words) - n
-                        if diff < 2:
+                        if diff <= 2 and goods.count > 0:
                             consist.insert(0, goods.id)
-                        elif diff < 4:
+                        elif diff <= 4 and (goods.count > 0 or a['admin_authorization']):
                             consist.append(goods.id)
             # объединяем и возвращаем найденное в порядке соответствия
             if end:
-                return full + great_part + small_part + consist
-            return [full, great_part, small_part, consist]
+                return full + great_part + consist + small_part
+            return [full, great_part, consist, small_part]
 
         def by_description(text, end=False):
             text = text.lower()
@@ -1293,37 +1294,50 @@ class SearchAPI(Resource):
             great_part = []
             small_part = []
             consist = []
-            text_words = {w.strip() for w in text.split()}  # множество слов в тексте
+            text_words = {w.strip(symbols) for w in text.split()}  # множество слов в тексте
             len_text_words = len(text_words)
             for goods in GoodsModel.query.all():
                 description = (goods.short_description + ' ' + goods.description).lower()
-                if text in description:
-                    small_part.append(goods.id)
+                description_words = {w.strip(symbols) for w in
+                                     description.split()}  # множество слов в описании
+                if text in description_words:
+                    if goods.count > 0 or a['admin_authorization']:
+                        small_part.append(goods.id)
                 else:
-                    description_words = {w.strip() for w in description.split()}  # множество слов в описании
                     n = len(text_words & description_words)
                     if n:
                         diff = len_text_words - n
                         # если разница между количеством слов в тексте
                         # и количеством их пересечений со словами из описания маленькая
                         # (т.е. большинство слов в тексте найдено в описании)
-                        if diff < (len_text_words // 5) * 3:
-                            consist.append(goods.id)
+                        if diff <= (len_text_words // 5) * 3:
+                            if goods.count > 0 or a['admin_authorization']:
+                                consist.append(goods.id)
             # объединяем и возвращаем найденное в порядке соответствия
             if end:
-                return full + great_part + small_part + consist
-            return [full, great_part, small_part, consist]
+                return full + great_part + consist + small_part
+            return [full, great_part, consist, small_part]
 
+        # умное избавление от одинаковых результатов
+        # + если надо, преврящаем все goods_id в данные для карточек
         def remove_same(lst):
             new = []
             for item in lst:
                 if item not in new:
                     new.append(item)
+            if need_cards:
+                new = list(map(lambda g_id: GoodsModel.query.filter_by(id=g_id).first().to_dict(
+                    full_link_req=True,
+                    card_description_req=True,
+                    photo_req=True), new))
             return new
 
         params = params if params else dict(request.args)
         optimize_params(params)
+        a = a if a else get_authorization(params=params)
         arg = str(r).lower().strip(' /')
+        need_cards = params['cards'] if 'cards' in params else False
+        max_count = params['max'] if 'max' in params else 10
 
         # поиск по артиклу
         if arg == 'id':
@@ -1343,7 +1357,7 @@ class SearchAPI(Resource):
             try:
                 if 'name' not in params:
                     return make_success(False, message="Bad request")
-                result = remove_same(by_name(params['name'], end=True))
+                result = remove_same(by_name(params['name'], end=True))[:max_count]
                 return make_success(goods=result)
             except Exception as e:
                 logging.error("SearchAPI Error (get by name):\t{}".format(e))
@@ -1354,7 +1368,7 @@ class SearchAPI(Resource):
             try:
                 if 'description' not in params:
                     return make_success(False, message="Bad request")
-                result = remove_same(by_name(params['description'], end=True))
+                result = remove_same(by_name(params['description'], end=True))[:max_count]
                 return make_success(goods=result)
             except Exception as e:
                 logging.error("SearchAPI Error (get by description):\t{}".format(e))
@@ -1383,7 +1397,7 @@ class SearchAPI(Resource):
                     result += result2[i]
                 if result0:  # если найден товар по id
                     result.insert(0, result0.id)  # добавляем в начало всего найденного
-                result = remove_same(result)  # избавляемся от одинаковых
+                result = remove_same(result)[:max_count]
                 return make_success(goods=result)
             except Exception as e:
                 logging.error("SearchAPI Error (get by all parameters):\t{}".format(e))
@@ -1705,6 +1719,26 @@ def re_restore():
                 data['len_basket'] = new_data['len_basket']
                 data['basket'] = new_data['basket']
             return render('index.html', title=t, data=data)
+
+
+@app.route('/search/')
+def search():
+    try:
+        if 'text' not in request.args:
+            return redirect('/')
+        text = request.args['text'].strip()
+        data = D.get_base_data()
+        data['request'] = text
+        data['goods'] = []
+        data['empty_request'] = True
+        if text:
+            data['empty_request'] = False
+            api_response = searchAPI.get(r='auto', params={'text': text, 'cards': True, 'max': 15})
+            data['goods'] = api_response['goods']
+        return render('search.html', title="Поиск", data=data)
+    except Exception as e:
+        logging.error("User search Error (text: {}):\t{}".format(text, e))
+        return server_error()
 
 
 @app.route('/<string:category>', methods=["GET", "POST"])
@@ -2032,6 +2066,26 @@ def make_order():
     return render("order.html", title=t, data=data)
 
 
+@app.route('/contacts', methods=["GET", "POST"])
+def show_contacts():
+    t = "Контакты"
+    data = D.get_base_data()
+    if request.method == "POST":
+        if 'sign-in' in request.form:
+            return sign_in('contacts.html', t, data)
+    return render("contacts.html", title=t, data=data)
+
+
+@app.route('/help', methods=["GET", "POST"])
+def show_help():
+    t = "Помощь покупателю"
+    data = D.get_base_data()
+    if request.method == "POST":
+        if 'sign-in' in request.form:
+            return sign_in('help.html', t, data)
+    return render("help.html", title=t, data=data)
+
+
 def error(err=520, message='Что-то пошло не так :('):
     data = D.get_base_data(anyway=True)
     data.update({'message': message, 'type': err})
@@ -2096,6 +2150,7 @@ db.create_all()
 # Все API
 userAPI = UserAPI()
 goodsAPI = GoodsAPI()
+searchAPI = SearchAPI()
 basketAPI = BasketAPI()
 orderAPI = OrderAPI()
 authorizationAPI = AuthorizationAPI()

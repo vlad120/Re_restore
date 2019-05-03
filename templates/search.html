@@ -1,0 +1,71 @@
+{% extends "Base.html" %}
+
+{% block style %}
+    <style type="text/css">
+        .content { margin-left: 50px; }
+        .base-title {
+            margin-top: 70px;
+            color: seagreen;
+        }
+        .card {
+            margin-top: 20px;
+            margin-bottom: 5px;
+        }
+        .one-line { display: inline-block; }
+        .card-img-top {
+            height: 180px;
+            width: auto;
+            margin-top: 20px;
+        }
+        .goods-title { color: green; }
+        .goods-title:hover {
+            text-decoration: none;
+            color: teal;
+        }
+        .goods-price {
+            font-size: 22px;
+            font-style: italic;
+            color: seagreen;
+            margin-bottom: 5px;
+            float: right;
+            margin-left: 100px;
+            margin-right: 40px;
+        }
+    </style>
+{% endblock %}
+
+
+{% block content %}
+    {% if data['goods'] %}
+        <h3 class="content base-title"><b>Результаты поиска:</b> <em>« {{ data['request'] }} »</em></h3>
+            <div style="min-width: 750px;">
+                {% for item in data['goods'] %}
+                    <div class="card content one-line" style="width: 300px;">
+                        <p style="text-align: center; margin-bottom: 0;">
+                            <a href="{{ item['full_link'] }}">
+                                <img src="{{ item['photo'] }}" class="card-img-top" alt="Упс...">
+                            </a>
+                        </p>
+                        <div class="card-body">
+                            <h5 class="card-title"><a href="{{ item['full_link'] }}" class="goods-title">{{ item['name'] }}</a></h5>
+                            <p class="card-text" style="margin-bottom: 5px;">{{ item['card_description'] }}</p>
+                            <p class="card-text goods-price"><b>{{ item['price'] }}₽</b></p>
+                            <a href="{{ item['full_link'] }}" target="_blank" class="btn btn-info btn-buy one-line" style="margin-right: 10px;">Подробнее</a>
+                            {% if item['id'] in data['basket'] %}
+                                <button type="button" class="btn btn-success" disabled>В корзине</button>
+                            {% else %}
+                                <form method="post"class="one-line">
+                                    <input type="hidden" name="addToBasketGoodsID" value="{{ item['id'] }}">
+                                    <button type="submit" class="btn btn-outline-info" name="addToBasket" {% if not authorization['id'] or authorization['admin_authorization'] %}disabled{% endif %}>В корзину</button>
+                                </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+    {% elif data['empty_request'] %}
+        <h3 class="content base-title"><b>Вы ввели пустой запрос.</b></h3>
+    {% else %}
+        <h3 class="content base-title"><b>По запросу: <em>« {{ data['request'] }} »</em> ничего не найдено :(</b></h3>
+    {% endif %}
+{% endblock %}

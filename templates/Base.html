@@ -41,17 +41,34 @@
             position: absolute;
             z-index: 1;
         }
+        .search {
+            height: 30px;
+            width: 40%;
+            min-width: 320px;
+            margin-left: 190px;
+            margin-top: -45px;
+            position: absolute;
+            z-index: 1;
+        }
+        .my-footer {
+            background-color: #333a40;
+            font-size: 16px;
+            width: 100%;
+            height: 100px;
+            float: end;
+            min-width: 750px;
+        }
+        .my-footer-content {
+            display: inline-block;
+            margin-top: 20px;
+        }
     </style>
 
-    <title>{{title}}</title>
+    <title>{{ title }}</title>
 </head>
 <body>
     <nav class="navbar navbar-expand navbar-light bg-light" style="min-width: 750px;">
         <a class="navbar-brand" href="/" style="color: navy; font-size: 25px;"><em><b><span style="color: forestgreen">Re</span>_restrore</b></em></a>
-        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavAltMarkup"
-                aria-controls="navbarNavAltMarkup" aria-expanded="false" aria-label="Toggle navigation">
-            <span class="navbar-toggler-icon"></span>
-        </button>
         <div class="collapse navbar-collapse flex-row-reverse" id="navbarNavAltMarkup1">
             <div class="navbar-nav">
                 {% if authorization['id'] %}
@@ -121,6 +138,13 @@
         {% endif %}
     </div>
 
+    <form class="input-group mb-3 search" action="/search/">
+        <input type="text" class="form-control" placeholder="Поиск" name="text">
+        <div class="input-group-append">
+            <button class="btn btn-sm btn-outline-secondary" type="submit">Найти</button>
+        </div>
+    </form>
+
     <div style="min-height: 95vh; min-width: 750px;">
         {% block content %}{% endblock %}
     </div>
@@ -128,14 +152,14 @@
     <br>
     <br>
     <br>
-    <div style="background-color: #333a40; font-size: 16px; width: 100%; height: 110px; float: end; min-width: 750px;">
-        <pre style="display: inline-block; float: left; color: white; margin-left: 50px; margin-top: 30px;">
-Контакты:    +7 (XXX) XXX-XX-XX
-             re_restore@mail.ru
-        </pre>
-        <pre style="display: inline-block; float: right; color: white; margin-right: 50px; margin-top: 30px;">
-            ©2019, Re_restore
-            (Все права защищены)
-        </pre>
+    <div class="my-footer">
+        <div class="my-footer-content" style="margin-left: 20px;">
+            <a href="/help" class="btn btn-sm btn-outline-secondary">Помощь покупателю</a>
+            <a href="/contacts" class="btn btn-sm btn-outline-secondary" style="margin-left: 20px;">Контакты</a>
+        </div>
+        <div class="my-footer-content" style="float: right; margin-right: 50px; color: dimgrey;">
+            <h6>©2019, интернет-магазин Re_restore</h6>
+            <h6>(Все права защищены)</h6>
+        </div>
     </div>
 </body>
