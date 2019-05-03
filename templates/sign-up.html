@@ -54,6 +54,17 @@
         <p class="content">
             <div class="input-group mb-3 content form-fields">
                 <div class="input-group-prepend">
+                    <span class="input-group-text"><i>N</i></span>
+                </div>
+                <input class="form-control" name="phone" placeholder="Номер телефона" value="{{ data['last']['registration']['phone'] }}">
+            </div>
+            {% if data['errors']['registration']['phone'] %}
+                <p class="registration-error">{{ data['errors']['registration']['phone'] }}</p>
+            {% endif %}
+        </p>
+        <p class="content">
+            <div class="input-group mb-3 content form-fields">
+                <div class="input-group-prepend">
                     <span class="input-group-text">@</span>
                 </div>
                 <input type="email" class="form-control" name="email" placeholder="E-Mail" value="{{ data['last']['registration']['email'] }}">

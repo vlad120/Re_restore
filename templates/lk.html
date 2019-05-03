@@ -39,13 +39,6 @@
             float: right;
             margin-right: 16px;
         }
-        .change-info-error {
-            font-size: 10px;
-            color: orangered;
-            margin-bottom: 5px;
-            margin-top: 5px;
-            margin-left: 22px;
-        }
         .choose-photo {
             margin-top: 30px;
             width: 260px;
@@ -80,6 +73,19 @@
             margin-top: 40px;
             margin-bottom: 20px;
         }
+        .change-info-error {
+            font-size: 10px;
+            color: orangered;
+            margin-bottom: 5px;
+            margin-top: 5px;
+            margin-left: 22px;
+        }
+        .change-order-error {
+            font-size: 18px;
+            color: orangered;
+            margin-bottom: 15px;
+            margin-top: 15px;
+        }
     </style>
 {% endblock %}
 
@@ -109,6 +115,15 @@
                         <input class="form-control form-control-sm one-line" type="text" value="{{ data['user']['surname'] }}" name="surname">
                         {% if data['errors']['change_profile_info']['surname'] %}
                             <p class="change-info-error">{{ data['errors']['change_profile_info']['surname'] }}</p>
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr>
+                    <td>Телефон:</td>
+                    <td>
+                        <input class="form-control form-control-sm one-line" name="phone" value="{{ data['user']['phone'] }}">
+                        {% if data['errors']['change_profile_info']['phone'] %}
+                            <p class="change-info-error">{{ data['errors']['change_profile_info']['phone'] }}</p>
                         {% endif %}
                     </td>
                 </tr>
@@ -178,7 +193,7 @@
     </form>
 
     {% if data['errors']['edit_order'] %}
-        <h3 class="change-info-error">{{ data['errors']['edit_order'] }}</h3>
+        <h3 class="change-order-error content">{{ data['errors']['edit_order'] }}</h3>
     {% endif %}
 
     <h2 class="content orders-title">Мои заказы</h2>
@@ -187,7 +202,7 @@
             <div class="card border-info mb-3 order-card">
                 <div class="card-header">
                     <b>
-                        <p class="one-line card-header-text">№{{ item['id'] }} от <i>{{ item['user']['login'] }}</i></p>
+                        <p class="one-line card-header-text"><i>№{{ item['id'] }}</i></p>
                         <p class="one-line card-header-text status">
                             {% if item['status'] == 'processing' %}
                                 <span style="color: teal;">Выполняется</span>
@@ -212,9 +227,6 @@
                     </ul>
                     -------------------------------------
                     <p class="card-text"><b>Итого:</b> {{ item['total'] }}руб</p>
-                    <form method="post" class="one-line" style="float: right; margin-top: 5px;">
-                        <button type="submit" class="btn btn-dark" name="deleteOrderBtn" value="{{ item['id'] }}">Удалить</button>
-                    </form>
                     {% if item['status'] in ['processing', 'delivered'] %}
                         <form method="post" class="one-line" style="float: right; margin-right: 20px; margin-top: 5px;">
                             <button type="submit" class="btn btn-warning" name="cancelOrderBtn" value="{{ item['id'] }}">Отменить</button>

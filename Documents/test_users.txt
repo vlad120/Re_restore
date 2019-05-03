@@ -1,8 +1,8 @@
 ﻿# для проверки
 
 Пользователи (логин:пароль) {
-    aaa: qwerty
-    bbb: qwerty
+    vasya: qwerty
+    kolya: uiop
 }
 Админ {
     admin: admin

@@ -1,5 +1,5 @@
 ﻿"""
-    Version 1.3.0 (03.05.2019)
+    Version 1.3.1 (03.05.2019)
     Mironov Vladislav
 """
 
@@ -213,7 +213,7 @@ class OrderModel(db.Model):
         if status_req:
             d['status'] = self.status
         if user_req:
-            d['user'] = self.user.to_dict(login_req=True)
+            d['user'] = self.user.to_dict(login_req=True, phone_req=True)
         return d
 
 
@@ -221,21 +221,23 @@ class UserModel(db.Model):
     id = db.Column(db.Integer, unique=True, primary_key=True, autoincrement=True)
     name = db.Column(db.String(80), nullable=False)
     surname = db.Column(db.String(80), nullable=False)
+    phone = db.Column(db.String(12), nullable=False, unique=True)
     email = db.Column(db.String(120), nullable=False)
     login = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(200), nullable=False)
     subscription = db.Column(db.SMALLINT, default=1)
     photo = db.Column(db.String(100), default="NoPhoto.jpg")
-    basket = db.Column(db.String, default={'basket': []})
+    basket = db.Column(db.String, default='{"basket": []}')
 
     def __repr__(self):
         return '<UserModel {} {} {} {}>'.format(self.id, self.login, self.name, self.surname)
 
     def to_dict(self, id_req=True, name_req=False, surname_req=False,
-                email_req=False, login_req=False, photo_req=False,
-                subscr_req=False, all_req=False):
+                phone_req=False, email_req=False, login_req=False,
+                photo_req=False, subscr_req=False, all_req=False):
         if all_req:
-            id_req, name_req, surname_req, email_req, login_req, photo_req, subscr_req = (True for _ in range(7))
+            id_req, name_req, surname_req, email_req,\
+            phone_req, login_req, photo_req, subscr_req = (True for _ in range(8))
         d = dict()
         if id_req:
             d['id'] = self.id
@@ -243,6 +245,8 @@ class UserModel(db.Model):
             d['name'] = self.name
         if surname_req:
             d['surname'] = self.surname
+        if phone_req:
+            d['phone'] = self.phone
         if email_req:
             d['email'] = self.email
         if login_req:
@@ -335,6 +339,7 @@ class DataTemplate:
             if api_response['success']:
                 goods = api_response['goods']
                 slides = list(filter(lambda f: f != '.DS_Store', listdir("static/main_slides")))
+                slides.sort()
                 return {'slides': ['static/main_slides/{}'.format(slide) for slide in slides],
                         'len_slides': len(slides),
                         'goods': goods
@@ -352,6 +357,7 @@ class DataTemplate:
                         'orders': order_api_response['orders'],
                         'errors': {'change_profile_info': {'name': None,
                                                            'surname': None,
+                                                           'phone': None,
                                                            'email': None,
                                                            'check_password': None,
                                                            'new_password': None,
@@ -390,7 +396,7 @@ class DataTemplate:
             data = {'errors': {'registration': {}},
                     'last': {'registration': {}}
                     }
-            for i in ['name', 'surname', 'email', 'login', 'password']:
+            for i in ['name', 'surname', 'phone', 'email', 'login', 'password']:
                 data['errors']['registration'][i] = None
                 data['last']['registration'][i] = ''
             return data
@@ -490,7 +496,7 @@ class AuthorizationAPI(Resource):
 
     # Регистрация нового пользователя
     def post(self, r=None, request_data=None):
-        all_fields = ['name', 'surname', 'email', 'login', 'password']
+        all_fields = ['name', 'surname', 'phone', 'email', 'login', 'password']
         errors = dict()
         for field in all_fields + ['other']:
             errors[field] = None
@@ -523,7 +529,25 @@ class AuthorizationAPI(Resource):
             # на занятый логин
             if (login == ADMIN_LOGIN or
                     UserModel.query.filter_by(login=login).first()):
-                errors['login'] = "Логин занят другим пользователем. Придумайте другой."
+                errors['login'] = "Логин занят. Придумайте другой."
+
+            # на корректность номера телефона
+            phone = str(args['phone']).strip()
+            plus = phone[0] == '+'
+            phone = phone.strip('+')
+            if phone.isdigit() and (phone[0] == '7' or (phone[0] in '89' and not plus)):
+                if phone[0] in '78' and len(phone) == 11:
+                    args['phone'] = '+7' + phone[1:]
+                elif len(phone) == 10:
+                    args['phone'] = '+7' + phone
+                else:
+                    errors['phone'] = "Некорректный номер телефона."
+            else:
+                errors['phone'] = "Некорректный формат номера телефона."
+
+            # на занятый номер телефона
+            if UserModel.query.filter_by(phone=args['phone']).first():
+                errors['phone'] = "Номер телефона занят. Введите другой."
 
             # на длину полей (для базы данных)
             if len(args['name']) > 80:
@@ -582,8 +606,8 @@ class UserAPI(Resource):
                 return make_success(False, message='Access Error')
             try:
                 return make_success(users=[i.to_dict(name_req=True, surname_req=True,
-                                                     email_req=True, login_req=True) for i in
-                                           UserModel.query.all()])
+                                                     phone_req=True, email_req=True,
+                                                     login_req=True) for i in UserModel.query.all()])
             except Exception as e:
                 logging.error("UserAPI Error (get all):\t{}".format(e))
                 return make_success(False, message='Server Error')
@@ -598,6 +622,7 @@ class UserAPI(Resource):
         if arg.isdigit():
             errors = {'name': None,
                       'surname': None,
+                      'phone': None,
                       'email': None,
                       'check_password': None,
                       'new_password': None,
@@ -661,6 +686,27 @@ class UserAPI(Resource):
                         errors['surname'] = "Слишком длинная фамилия (> 80 символов)."
                     else:
                         user.surname = args['surname'].strip()
+
+                if args['phone'] and args['phone'] != user.phone:
+                    phone = str(args['phone']).strip()
+                    plus = phone[0] == '+'
+                    phone = phone.strip('+')
+                    if phone.isdigit() and (phone[0] == '7' or (phone[0] in '89' and not plus)):
+                        if phone[0] in '78' and len(phone) == 11:
+                            phone = '+7' + phone[1:]
+                        elif len(phone) == 10:
+                            phone = '+7' + phone
+                        else:
+                            errors['phone'] = "Некорректный номер телефона."
+                    else:
+                        errors['phone'] = "Некорректный формат номера телефона."
+                    # занятость номера телефона
+                    if UserModel.query.filter_by(phone=phone).first():
+                        errors['phone'] = "Номер телефона занят. Введите другой."
+                    # при отсутствии ошибок
+                    elif not errors['phone']:
+                        user.phone = phone
+
                 if args['email'] and args['email'] != user.email:
                     if len(args['email']) > 120:
                         errors['email'] = "Слишком длинный e-mail (> 120 символов)."
@@ -1047,9 +1093,9 @@ class GoodsAPI(Resource):
                     try:
                         if args['delete_photo'].strip('/') != NO_GOODS_PHOTO.strip('/'):
                             photo = args['delete_photo'].split('/')[-1]
-                            # проверка на случай, если фото уже нет в папке
-                            if photo in listdir():
-                                remove(photo)
+                            folder = get_folder(goods)
+                            if photo in listdir(folder):
+                                remove(folder + photo)
                             # в любом случае, удаляем его из списка фотографий товара
                             photos = goods.photos.split(';')
                             for i in range(photos.count(photo)):
@@ -1066,7 +1112,6 @@ class GoodsAPI(Resource):
                         if type(args['add_photo']) is not list:
                             args['add_photo'] = [args['add_photo']]
                         goods_photos = goods.photos.split(';')
-                        args['add_photo'] = list(reversed(args['add_photo']))
                         for i in range(len(args['add_photo'])):
                             photo = args['add_photo'][i]
                             # проверка на случайное совпадение имен фотографий
@@ -1265,7 +1310,7 @@ class SearchAPI(Resource):
                             great_part.insert(0, goods.id)
                         elif a['admin_authorization']:
                             great_part.append(goods.id)
-                    elif name in [w.strip(symbols) for w in goods_name.split()]:
+                    else:
                         if goods.count > 0:
                             small_part.insert(0, goods.id)
                         elif a['admin_authorization']:
@@ -1285,13 +1330,11 @@ class SearchAPI(Resource):
                             consist.append(goods.id)
             # объединяем и возвращаем найденное в порядке соответствия
             if end:
-                return full + great_part + consist + small_part
-            return [full, great_part, consist, small_part]
+                return full + great_part + small_part + consist
+            return [full, great_part, small_part, consist]
 
         def by_description(text, end=False):
             text = text.lower()
-            full = []
-            great_part = []
             small_part = []
             consist = []
             text_words = {w.strip(symbols) for w in text.split()}  # множество слов в тексте
@@ -1315,8 +1358,8 @@ class SearchAPI(Resource):
                                 consist.append(goods.id)
             # объединяем и возвращаем найденное в порядке соответствия
             if end:
-                return full + great_part + consist + small_part
-            return [full, great_part, consist, small_part]
+                return consist + small_part
+            return [[], [], consist, small_part]
 
         # умное избавление от одинаковых результатов
         # + если надо, преврящаем все goods_id в данные для карточек
@@ -1651,6 +1694,9 @@ class OrderAPI(Resource):
                     # проверка на собственника учетной записи / админа
                     if not (verify_curr_admin(a) or (int(a['id']) == order.user_id and verify_authorization(a=a))):
                         return make_success(False, message="Access Error")
+                    if order.status != 'cancel':
+                        return make_success(False, message="Status 'cancel' is required")
+                    goods = loads(order.goods)
                     db.session.delete(order)
                     db.session.commit()
                     return make_success()
@@ -1684,6 +1730,11 @@ class OrderAPI(Resource):
                             # проверка авторизации
                             if not verify_authorization(a):
                                 return make_success(False, message="Access Error")
+                            goods = loads(order.goods)
+                            # возращяем количество заказанных товаров
+                            for g in goods:
+                                GoodsModel.query.filter_by(id=g['id']).first().count += g['count']
+                            db.session.commit()
                         else:
                             # если статус-аргумент не соответствует ожиданиям
                             return make_success(False, message="Bad status")
@@ -1703,10 +1754,7 @@ def re_restore():
     t = 'Добро пожаловать в Re_restore!'
     data = D.get_data(base_req=True, main_req=True)
 
-    if request.method == "GET":
-        return render('index.html', title=t, data=data)
-
-    elif request.method == "POST":
+    if request.method == "POST":
         if 'sign-in' in request.form:
             return sign_in('index.html', t, data)
 
@@ -1718,24 +1766,41 @@ def re_restore():
                 new_data = D.get_base_data()
                 data['len_basket'] = new_data['len_basket']
                 data['basket'] = new_data['basket']
-            return render('index.html', title=t, data=data)
+    return render('index.html', title=t, data=data)
 
 
-@app.route('/search/')
+@app.route('/search/', methods=["GET", "POST"])
 def search():
+    t = "Поиск"
     try:
         if 'text' not in request.args:
             return redirect('/')
+
         text = request.args['text'].strip()
         data = D.get_base_data()
         data['request'] = text
         data['goods'] = []
         data['empty_request'] = True
+
         if text:
             data['empty_request'] = False
             api_response = searchAPI.get(r='auto', params={'text': text, 'cards': True, 'max': 15})
             data['goods'] = api_response['goods']
-        return render('search.html', title="Поиск", data=data)
+
+        if request.method == "POST":
+            if 'sign-in' in request.form:
+                sign_in('search.html', t, data)
+
+            if 'addToBasket' in request.form:
+                api_response = basketAPI.post(request.form['addToBasketGoodsID'])
+                if not api_response['success']:
+                    logging.error("Add to basket error:\t{}".format(api_response['massage']))
+                else:
+                    new_data = D.get_base_data()
+                    data['len_basket'] = new_data['len_basket']
+                    data['basket'] = new_data['basket']
+
+        return render('search.html', title=t, data=data)
     except Exception as e:
         logging.error("User search Error (text: {}):\t{}".format(text, e))
         return server_error()
@@ -1849,25 +1914,18 @@ def full_goods_admin(goods_id):
     return render('goods-admin.html', title=t, data=data)
 
 
-def sign_in(page, t, data, ready_data=None):
+def sign_in(page, t, data=dict(), ready_data=None):
     if get_authorization()['id']:
         return redirect('/lk')
 
     api_response = authorizationAPI.get(request_data=ready_data if ready_data else get_request_data())
     if api_response['success']:
         a = get_authorization(tmp_login=request.form['login'], tmp_password=request.form['password'], img=True)
-        if page in ('sign-up.html', 'lk.html'):
-            if verify_curr_admin(a):
-                data = D.get_data(base_req=True, lk_admin_req=True, a=a)
-                page = 'lk-admin.html'
-            else:
-                data = D.get_data(base_req=True, lk_req=True, a=a)
-                page = 'lk.html'
         if not data:
             return error()
-        if page == 'goods.html' and verify_curr_admin(a):
-            data['errors'].update(D.get_edit_goods_data()['errors'])
-            page = 'goods-admin.html'
+        if page == 'sign-up.html':
+            page = 'success.html'
+            data['message'] = "Вы успешно авторизировались!"
         resp = make_response(render(page, a=a, title=t, data=data))
         resp.set_cookie('userID', str(a['id']))
         resp.set_cookie('userLogin', str(a['login']))
@@ -1909,9 +1967,10 @@ def sign_up():
 
         api_response = authorizationAPI.post(request_data=form)
         if api_response['success']:
-            return sign_in('lk.html', t='Успешно', data=data, ready_data={'id': api_response['success'],
-                                                                          'login': form['login'],
-                                                                          'password': form['password']})
+            data['message'] = "Вы успешно зарегистрировались! Ваш id: {}".format(api_response['success'])
+            return sign_in('success.html', t='Успешно', data=data, ready_data={'id': api_response['success'],
+                                                                               'login': form['login'],
+                                                                               'password': form['password']})
         else:
             data['errors']['registration'].update(api_response['errors'])
             data['last']['registration'].update(form)
@@ -1943,14 +2002,14 @@ def lk():
                 resp = userAPI.delete(request_data['deleteUserBtn'])
                 if resp['success']:
                     return sign_out()
-            elif 'deleteOrderBtn' in request_data:
-                resp = orderAPI.delete(request_data['deleteOrderBtn'])
-                if not resp['success']:
-                    data['errors']['edit_order'] = resp['message']
             elif 'cancelOrderBtn' in request_data:
                 resp = orderAPI.put(request_data['cancelOrderBtn'], params={'status': 'cancel'})
                 if not resp['success']:
                     data['errors']['edit_order'] = resp['message']
+            # обновляем данные пользователя
+            new_data = D.get_data(base_req=True, lk_req=True)
+            data['user'] = new_data['user']
+            data['orders'] = new_data['orders']
         return render("lk.html", title=t, data=data)
     return redirect('/')
 

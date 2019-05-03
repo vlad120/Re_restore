@@ -45,7 +45,13 @@
             padding-right: 16px;
             border-bottom: 0;
         }
+        .btn-change-status {
+            float: right;
+            margin-right: 20px;
+            margin-top: 5px;
+        }
         .card-header-text:hover { text-decoration: none; }
+        .card-body { margin-top: -10px; }
         .btn-dark { float: right; }
         .one-line { display: inline-block; }
         .data-lk-admin-error { color: red; }
@@ -95,7 +101,7 @@
                             <div class="card border-info mb-3 goods-card">
                                 <div class="card-header card-header-text">
                                     <b>
-                                        <p class="one-line">№{{ item['id'] }} от <i>{{ item['user']['login'] }}</i></p>
+                                        <p class="one-line">№{{ item['id'] }} от <i>{{ item['user']['login'] }}</i> <span style="color: black; margin-left: 10px;">{{ item['user']['phone'] }}</span></p>
                                         <p class="one-line status">
                                             {% if item['status'] == 'processing' %}
                                                 Выполняется
@@ -120,18 +126,19 @@
                                     </ul>
                                     -------------------------------------
                                     <p class="card-text"><b>Итого:</b> {{ item['total'] }}руб</p>
-                                    <form method="post" class="one-line" style="float: right; margin-top: 5px;">
-                                        <button type="submit" class="btn btn-dark" name="deleteOrderBtn" value="{{ item['id'] }}">Удалить</button>
-                                    </form>
-                                    {% if item['status'] == 'processing' %}
-                                        <form method="post" class="one-line" style="float: right; margin-right: 20px; margin-top: 5px;">
+                                    {% if item['status'] in ['cancel', 'done'] %}
+                                        <form method="post" class="one-line btn-change-status">
+                                            <button type="submit" class="btn btn-dark" name="deleteOrderBtn" value="{{ item['id'] }}">Удалить</button>
+                                        </form>
+                                    {% elif item['status'] == 'processing' %}
+                                        <form method="post" class="one-line btn-change-status">
                                             <button type="submit" class="btn btn-warning" name="cancelOrderBtn" value="{{ item['id'] }}">Отменить</button>
                                         </form>
-                                        <form method="post" class="one-line" style="float: right; margin-right: 20px; margin-top: 5px;">
+                                        <form method="post" class="one-line btn-change-status">
                                             <button type="submit" class="btn btn-success" name="deliveredOrderBtn" value="{{ item['id'] }}">Доставлено</button>
                                         </form>
                                     {% elif item['status'] == 'delivered' %}
-                                        <form method="post" class="one-line" style="float: right; margin-right: 20px; margin-top: 5px;">
+                                        <form method="post" class="one-line btn-change-status">
                                             <button type="submit" class="btn btn-success" name="doneOrderBtn" value="{{ item['id'] }}">Готово</button>
                                         </form>
                                     {% endif %}
@@ -148,10 +155,11 @@
                                 <div class="card-header card-header-text"><b>№{{ user['id'] }}: <i>{{ user['name'] }} {{ user['surname'] }}</i></b></div>
                                 <div class="card-body">
                                     <div class="one-line" style="padding-right: 50px;">
-                                        <p class="card-text">E-mail: {{ user['email'] }}</p>
-                                        <p class="card-text">Логин: {{ user['login'] }}</p>
+                                        <p class="card-text"><b>E-mail:</b> <i>{{ user['email'] }}</i></p>
+                                        <p class="card-text"><b>Телефон:</b> <i>{{ user['phone'] }}</i></p>
+                                        <p class="card-text"><b>Логин:</b> <i>{{ user['login'] }}</i></p>
                                     </div>
-                                    <form method="post" class="one-line">
+                                    <form method="post" class="one-line" style="float: right;">
                                         <button type="submit" class="btn btn-dark" name="deleteUserBtn" value="{{ user['id'] }}">Удалить</button>
                                     </form>
                                 </div>
