@@ -1,5 +1,5 @@
 ﻿"""
-    Version 1.3.1 (03.05.2019)
+    Version 1.3.2 (07.05.2019)
     Mironov Vladislav
 """
 
@@ -8,9 +8,8 @@ from flask_restful import reqparse, Api, Resource
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import check_password_hash, generate_password_hash
 from os import remove, listdir, makedirs, rmdir, path, rename
-from shutil import copyfile
 from json import loads, dumps
-from random import randrange
+from datetime import datetime
 import logging
 
 
@@ -93,15 +92,13 @@ def verify_authorization(admin=False, a=None):
         return False
 
 
-def get_folder(goods, sl=True, category=None):
+def get_folder(goods, sl=False):
     """
         Получить директорию конкретного товара в файловой системе:
         sl - нужен ли '/' в конце возвращаемого пути;
-        category - использутся, когда нужно получить другой, новый путь.
+        category - когда нужно получить другой (новый) путь.
     """
-    name = "_".join(goods.name[:10].split())  # замена пробелов в имени
-    category = (category if category else goods.category).strip(' /')
-    return 'static/goods/{}/{}'.format(category, name) + ('/' if sl else '')
+    return 'static/goods/{}'.format(goods.id) + ('/' if sl else '')
 
 
 def optimize_params(params):
@@ -113,6 +110,10 @@ def optimize_params(params):
             pass
 
 
+def curr_time():
+    return str(datetime.today())[:19]
+
+
 class GoodsModel(db.Model):
     id = db.Column(db.Integer, unique=True, primary_key=True, autoincrement=True)
     name = db.Column(db.String(80), nullable=False)
@@ -121,7 +122,8 @@ class GoodsModel(db.Model):
     price = db.Column(db.Integer, nullable=False)
     count = db.Column(db.Integer, nullable=False)
     category = db.Column(db.String(150), nullable=False)
-    photos = db.Column(db.String(500), default=NO_GOODS_PHOTO)
+    len_photos = db.Column(db.CHAR(2), default="0")  # количество фото (string)
+    date_changes = db.Column(db.CHAR(19))
 
     def __repr__(self):
         return '<GoodsModel {} {} {}руб {}шт>'.format(self.id, self.name, self.price, self.count)
@@ -153,23 +155,41 @@ class GoodsModel(db.Model):
             if c:
                 d['full_category'] = c.to_dict()
         if full_link_req:
-            d['full_link'] = '/{}/{}'.format(self.category.strip(' /'), self.id)
+            d['full_link'] = '/{}/{}'.format(self.category, self.id)
         if photo_req:
-            photos = self.photos.strip(';').split(';')
-            if len(photos) == 1 and photos[0] == NO_GOODS_PHOTO:
+            if self.len_photos == "0":
                 d['photo'] = NO_GOODS_PHOTO
             else:
-                d['photo'] = '/{}/{}'.format(get_folder(self), photos[0])
+                d['photo'] = '/{}/1.png'.format(get_folder(self))
         if photos_req:
-            photos = self.photos.strip(';').split(';')
-            if len(photos) == 1 and photos[0] == NO_GOODS_PHOTO:
+            if self.len_photos == "0":
                 d['photos'] = [NO_GOODS_PHOTO]
                 d['len_photos'] = 1
             else:
-                folder = '/' + get_folder(self)
-                d['photos'] = [folder + photo.strip(' /') for photo in photos]
-                d['len_photos'] = len(photos)
+                folder = get_folder(self)
+                n = int(self.len_photos)
+                d['photos'] = ['/{}/{}.png?{}'.format(folder, i + 1, self.date_changes) for i in range(n)]
+                d['len_photos'] = n
         return d
+
+    def change_category(self, new_category, errors=dict()):
+        try:
+            old_category = CategoryModel.query.filter_by(name=self.category).first()
+            if len(GoodsModel.query.filter_by(category=old_category.name).all()) == 1:
+                # если это последний товар в категории, удаляем ее
+                db.session.delete(old_category)
+                db.session.commit()
+            if not CategoryModel.query.filter_by(name=new_category.name).first():
+                # если новой категории еще не существует, добавляем ее в БД
+                db.session.add(new_category)
+                db.session.commit()
+            self.category = new_category.name
+            db.session.commit()
+        except Exception as e:
+            logging.error("GoodsAPI Error "
+                          "(edit goods {} DB category):\t{}".format(self.id, e))
+            errors['category'] = "Edit DB error"
+        return errors
 
 
 class CategoryModel(db.Model):
@@ -226,7 +246,8 @@ class UserModel(db.Model):
     login = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(200), nullable=False)
     subscription = db.Column(db.SMALLINT, default=1)
-    photo = db.Column(db.String(100), default="NoPhoto.jpg")
+    photo = db.Column(db.CHAR(1), default='0')  # 0 - нет фото, 1 - есть
+    date_changes = db.Column(db.CHAR(19))
     basket = db.Column(db.String, default='{"basket": []}')
 
     def __repr__(self):
@@ -254,7 +275,10 @@ class UserModel(db.Model):
         if subscr_req:
             d['subscription'] = self.subscription
         if photo_req:
-            d['photo'] = '/static/profiles/' + self.photo
+            if self.photo == '0':
+                d['photo'] = NO_PROFILE_PHOTO
+            else:
+                d['photo'] = '/static/profiles/{}.png?{}'.format(self.id, self.date_changes)
         return d
 
 
@@ -338,7 +362,7 @@ class DataTemplate:
             api_response = goodsAPI.get('random', params={'n': interesting_goods})
             if api_response['success']:
                 goods = api_response['goods']
-                slides = list(filter(lambda f: f != '.DS_Store', listdir("static/main_slides")))
+                slides = list(filter(lambda f: f[0] != '.', listdir("static/main_slides")))
                 slides.sort()
                 return {'slides': ['static/main_slides/{}'.format(slide) for slide in slides],
                         'len_slides': len(slides),
@@ -350,20 +374,19 @@ class DataTemplate:
     def get_lk_data(self, a=None):
         try:
             a = a if a else get_authorization()
-            user_api_response = userAPI.get(a['id'], a=a)
+            user_data = UserModel.query.filter_by(id=a['id']).first().to_dict(all_req=True)
             order_api_response = orderAPI.get('user', a=a, params={'user_id': str(a['id'])})
-            if user_api_response['success'] and order_api_response['success']:
-                return {'user': user_api_response['user'],
-                        'orders': order_api_response['orders'],
-                        'errors': {'change_profile_info': {'name': None,
-                                                           'surname': None,
-                                                           'phone': None,
-                                                           'email': None,
-                                                           'check_password': None,
-                                                           'new_password': None,
-                                                           'photo': None},
-                                   'edit_order': None},
-                        }
+            return {'user': user_data,
+                    'orders': order_api_response['orders'],
+                    'errors': {'change_profile_info': {'name': None,
+                                                       'surname': None,
+                                                       'phone': None,
+                                                       'email': None,
+                                                       'check_password': None,
+                                                       'new_password': None,
+                                                       'photo': None},
+                               'edit_order': None},
+                    }
         except Exception as e:
             logging.error("Get lk data template Error:\t{}".format(e))
 
@@ -646,20 +669,21 @@ class UserAPI(Resource):
 
                 # редактирование фото
                 if 'photo' in args and args['photo']:
-                    photo_name = None
+                    photo = None
                     try:
                         ext = args['photo'].filename.split('.')[-1]
                         if ext.lower() in ['png', 'jpg', 'jpeg']:
-                            photo_name = '{}.{}'.format(user.id, 'png')
-                            args['photo'].save('static/profiles/' + photo_name)
-                            user.photo = photo_name + '?' + str(randrange(1000000000))
+                            photo = 'static/profiles/{}.png'.format(user.id)
+                            args['photo'].save(photo)
+                            user.photo = '1'
+                            user.date_changes = curr_time()
                             db.session.commit()
                         else:
                             raise TypeError
                     except Exception as e:
                         logging.error("Save photo (change user info) Error:\t{}".format(e))
-                        if photo_name:
-                            remove(photo_name)
+                        if photo and path.exists(photo):
+                            remove(photo)
                             errors['photo'] = "Ошибка при загрузке фото."
 
                 # проверка на ввод подтверждающего пароля
@@ -845,57 +869,6 @@ class GoodsAPI(Resource):
         return make_success(False, message='Bad request')
 
     def put(self, r, a=None, params=dict(), request_data=None):
-        # перемещение данных товара в файловой системе
-        def move_goods(goods, new_category, errors=dict()):
-            e = None
-            try:
-                old_category = CategoryModel.query.filter_by(name=goods.category).first()
-                old_folder = get_folder(goods, category=old_category.name, sl=False)
-                new_folder = get_folder(goods, category=new_category.name, sl=False)
-                if not path.exists(new_folder):
-                    makedirs(new_folder)
-                if path.exists(old_folder):
-                    photos = goods.photos.split(';')
-                    for item in listdir(old_folder):
-                        if item in photos:
-                            copyfile(old_folder + '/' + item, new_folder + '/' + item)
-                            remove(old_folder + '/' + item)
-                    old_folder_items = list(filter(lambda f: f != '.DS_Store',
-                                                   listdir(old_folder)))
-                    if not old_folder_items:
-                        rmdir(old_folder)
-                        old_category_folder = "/".join(old_folder.split('/')[:-1])
-                        old_category_folder_items = list(filter(lambda f: f != '.DS_Store',
-                                                                listdir(old_category_folder)))
-                        if not old_category_folder_items:
-                            rmdir(old_category_folder)
-            except Exception as e:
-                logging.error("GoodsAPI Error "
-                              "(move folder while edit goods {} category):\t{}".format(goods.id, e))
-                errors['category'] = "Move folder error"
-            if not e:
-                try:
-                    if not path.exists(new_folder):
-                        makedirs(folder)
-                        logging.info("GoodsAPI Error "
-                                     "(folder wasn't created while edit goods {} category)"
-                                     " - solved!".format(goods.id))
-
-                    if len(GoodsModel.query.filter_by(category=old_category.name).all()) == 1:
-                        db.session.delete(old_category)
-                        db.session.commit()
-                    if not CategoryModel.query.filter_by(name=new_category.name).first():
-                        db.session.add(new_category)
-                        db.session.commit()
-                    goods = GoodsModel.query.filter_by(id=goods_id).first()
-                    goods.category = args['category']
-                    db.session.commit()
-                except Exception as e:
-                    logging.error("GoodsAPI Error "
-                                  "(edit goods {} DB category):\t{}".format(goods.id, e))
-                    errors['category'] = "Edit DB error"
-            return errors
-
         params = params if params else dict(request.args)
         optimize_params(params)
         a = a if a else get_authorization(params=params)
@@ -939,10 +912,10 @@ class GoodsAPI(Resource):
                             m = "Название не может содержать символ '/'."
                             errors['name'] = m
                         else:
-                            old_folder = get_folder(goods, sl=False)
+                            old_folder = get_folder(goods)
                             goods.name = args['name']
                             if path.exists(old_folder):
-                                new_folder = get_folder(goods, sl=False)
+                                new_folder = get_folder(goods)
                                 rename(old_folder, new_folder)
                             db.session.commit()
                     except:
@@ -961,6 +934,7 @@ class GoodsAPI(Resource):
                         else:
                             # если нужно изменить и русскую категорию
                             if args['rus_category'] != curr_category.rus_name:
+                                # проверка
                                 if args['rus_category'] and len(args['rus_category']) > 150:
                                     m = "Категория должна быть не более 150 символов."
                                     errors['rus_category'] = m
@@ -974,11 +948,10 @@ class GoodsAPI(Resource):
                                     # если русская категория существует в БД
                                     if check_rus_category:
                                         # и если переданная системная категория соответствует ей
-                                        if check_rus_category.name == args['category']:
-                                            # т.е. если и русская и системная категории есть в БД
-                                            new_category = CategoryModel(name=args['category'],
-                                                                         rus_name=args['rus_category'])
-                                            move_goods(goods, new_category, errors=errors)  # перемещаем данные + БД
+                                        if check_rus_category.name == check_category.name:
+                                            # т.е. если и русская и системная
+                                            # категории есть и соответствуют друг другу в БД
+                                            goods.change_category(check_category, errors=errors)
                                         else:
                                             m = "Русская категория должна быть уникальной для каждой " \
                                                 "системной категории (конфликт: {}).".format(check_rus_category.name)
@@ -990,26 +963,27 @@ class GoodsAPI(Resource):
                                             "системной категории (конфликт: {}).".format(check_category.name)
                                         errors['rus_category'] = m
                                     else:
-                                        # т.е. если ни русской категории, ни системной нет в БД
+                                        # т.е. если ни русской, ни системной категории нет в БД,
+                                        # создаем новую категорию
                                         new_category = CategoryModel(name=args['category'],
                                                                      rus_name=args['rus_category'])
-                                        move_goods(goods, new_category)  # создаем директорию и перемещаем данные + БД
+                                        goods.change_category(new_category, errors=errors)
                             else:
                                 # если в текущей категории присутствуют другие товары
                                 if len(GoodsModel.query.filter_by(category=goods.category).all()) > 1:
                                     m = "Изменять системную категорию можно только вкупе с русской, " \
-                                        "либо убедившишь, что товар единственный в данной категории."
+                                        "либо убедившишь, что товар единственный в данной категории " \
+                                        "(тогда русская категория изменится автоматически)."
                                     errors['category'] = m
                                 else:
                                     # т.е. если это единственный товар категории,
-                                    # пытаемся переместить данные товара, удалить старую категорию,
-                                    # создать новую и изменить все в БД
+                                    # удаляем старую категорию и создаем новую в БД
                                     new_category = CategoryModel(name=args['category'],
                                                                  rus_name=curr_category.rus_name)
-                                    move_goods(goods, new_category)  # перемещаем данные
+                                    goods.change_category(new_category, errors=errors)
                     except Exception as e:
                         logging.error("GoodsAPI Error "
-                              "(set goods {} category while edit info):\t{}".format(goods.id, e))
+                                      "(set goods {} category while edit info):\t{}".format(goods.id, e))
                         errors['category'] = unknown_err
 
                 elif args['rus_category']:
@@ -1035,7 +1009,6 @@ class GoodsAPI(Resource):
                                     curr_category.rus_name = args['rus_category']
                                     db.session.commit()
                                 else:
-                                    # иначе зашита от перезаписи русских категорий остальных товаров
                                     m = "В системной категории данного товара находятся другие товары – " \
                                         "защита от случайного переименования русской категории других товаров."
                                     errors['rus_category'] = m
@@ -1085,25 +1058,31 @@ class GoodsAPI(Resource):
                             goods.description = args['description']
                             db.session.commit()
                     except Exception as e:
-                        logging.error("GoodsAPI Error (edit description while edit info):\t{}".format(e))
+                        logging.error("GoodsAPI Error "
+                                      "(edit description while edit info {}):\t{}".format(goods.id, e))
                         errors['short_description'] = unknown_err
 
                 # удаление фото
                 if args['delete_photo']:
                     try:
-                        if args['delete_photo'].strip('/') != NO_GOODS_PHOTO.strip('/'):
-                            photo = args['delete_photo'].split('/')[-1]
+                        photo = args['delete_photo'].split('/')[-1].split('.')[0]  # номер
+                        if goods.len_photos != "0" and photo.isdigit():
                             folder = get_folder(goods)
-                            if photo in listdir(folder):
-                                remove(folder + photo)
-                            # в любом случае, удаляем его из списка фотографий товара
-                            photos = goods.photos.split(';')
-                            for i in range(photos.count(photo)):
-                                photos.remove(photo)
-                            goods.photos = ";".join(photos) if photos else NO_GOODS_PHOTO
-                            db.session.commit()
+                            # если фото находится именно в папке данного товара
+                            if args['delete_photo'].split('/')[-1].split('?')[0] in listdir(folder):
+                                remove('{}/{}.png'.format(folder, photo))
+                                n_all = int(goods.len_photos)
+                                goods.len_photos = str(n_all - 1)
+                                goods.date_changes = curr_time()
+                                db.session.commit()
+                                # переименовываем оставшиеся фото в порядке возрастания,
+                                # начиная с удаленного
+                                for i in range(int(photo), n_all):
+                                    rename('{}/{}.png'.format(folder, i + 1),
+                                           '{}/{}.png'.format(folder, i))
                     except Exception as e:
-                        logging.error("GoodsAPI Error (delete photo while edit info):\t{}".format(e))
+                        logging.error("GoodsAPI Error "
+                                      "(delete photo while edit info {}):\t{}".format(goods.id, e))
                         errors['delete_photo'] = "Ошибка сервера при удалении фото."
 
                 # добавление фотографий
@@ -1111,40 +1090,33 @@ class GoodsAPI(Resource):
                     try:
                         if type(args['add_photo']) is not list:
                             args['add_photo'] = [args['add_photo']]
-                        goods_photos = goods.photos.split(';')
                         for i in range(len(args['add_photo'])):
+                            len_photos = int(goods.len_photos)
                             photo = args['add_photo'][i]
-                            # проверка на случайное совпадение имен фотографий
-                            if photo.filename in goods_photos + listdir():
-                                m = "Некоторые фотографии не были загружены, т.к. произошел конфликт имен"
-                                errors['add_photo'] = m
-                                continue
                             try:
                                 ext = photo.filename.split('.')[-1]
-                                if ext.lower() in ['png', 'jpg', 'jpeg']:
-                                    folder = get_folder(goods, sl=False)
-                                    if not path.exists(folder):
-                                        makedirs(folder)
-                                    photo.save('{}/{}'.format(folder, photo.filename))
-                                    photos = goods.photos.split(';')
-                                    if len(photos) == 1 and photos[0] == NO_GOODS_PHOTO:
-                                        goods_photos = [photo.filename]
-                                    else:
-                                        goods_photos.append(photo.filename)
-                                    goods.photos = ";".join(goods_photos)
-                                    db.session.commit()
-                                else:
-                                    raise TypeError
+                                if ext.lower() not in ['png', 'jpg', 'jpeg']:
+                                    m = "Ошибка при загрузке некоторых фото (неверный формат)."
+                                    errors['add_photo'] = m
+                                    continue
+                                folder = get_folder(goods)
+                                if not path.exists(folder):
+                                    makedirs(folder)
+                                photo.save('{}/{}.png'.format(folder, len_photos + 1))
+                                goods.len_photos = str(len_photos + 1)
+                                goods.date_changes = curr_time()
+                                db.session.commit()
                             except Exception as e:
                                 logging.error("GoodsAPI Error (edit info, save photo):\t{}".format(e))
                                 if photo:
-                                    url = '{}/{}'.format(get_folder(goods, sl=False), photo.filename)
+                                    # при ошибке, если фото сохранилось, – удаляем его
+                                    url = '{}/{}.png'.format(get_folder(goods), len_photos + 1)
                                     if path.exists(url):
                                         remove(url)
                                 errors['add_photo'] = "Ошибка при загрузке некоторых фото."
                     except Exception as e:
                         logging.error("GoodsAPI Error (load photo while edit info):\t{}".format(e))
-                        errors['add_photo'] = "Ошибка при загрузке фото."
+                        errors['add_photo'] = "Ошибка при загрузке всех фото."
                 db.session.commit()
                 return make_success(errors=errors)
             except Exception as e:
@@ -1258,23 +1230,21 @@ class GoodsAPI(Resource):
                 return make_success(False, message="Access Error")
             try:
                 goods = GoodsModel.query.filter_by(id=arg).first()
+                category = goods.category
                 if goods:
                     db.session.delete(goods)
                     db.session.commit()
                     # удаление данных товара с файловой системы
-                    photos = goods.photos.split(';')
-                    folder = get_folder(goods, sl=False)
+                    folder = get_folder(goods)
                     if path.exists(folder):
                         for item in listdir(folder):
-                            if item in photos:
-                                remove('{}/{}'.format(folder, item))
-                        # если пустая директория товара, удаляем ее за собой
-                        if not list(filter(lambda f: f != '.DS_Store', listdir(folder))):
-                            rmdir(folder)
-                            category = "/".join(folder.split('/')[:-1])
-                            # если пустая директория категории, удаляем и ее
-                            if not list(filter(lambda f: f != '.DS_Store', listdir(category))):
-                                rmdir(category)
+                            remove('{}/{}'.format(folder, item))
+                        rmdir(folder)
+                    c = CategoryModel.query.filter_by(name=category).all()
+                    # если товар последний в категории, удаляем ее
+                    if len(c) == 1:
+                        db.session.delete(c[0])
+                        db.session.commit()
                     return make_success()
                 return make_success(False, message="Goods doesn't exist")
             except Exception as e:
@@ -1992,11 +1962,9 @@ def lk():
         if request.method == 'POST':
             if 'changeUserInfoBtn' in request_data:
                 response = userAPI.put(get_authorization()['id'], request_data=request_data)
-                data = D.get_data(base_req=True, lk_req=True)
                 data['errors']['change_profile_info'].update(response['errors'])
             elif 'photo' in request_data:
                 response = userAPI.put(get_authorization()['id'], request_data=request_data)
-                data = D.get_data(base_req=True, lk_req=True)
                 data['errors']['change_profile_info'].update(response['errors'])
             elif 'deleteUserBtn' in request_data:
                 resp = userAPI.delete(request_data['deleteUserBtn'])
