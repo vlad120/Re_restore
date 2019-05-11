@@ -21,19 +21,20 @@
       integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm"
       crossorigin="anonymous">
 
+    <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
+
     {% block style %}{% endblock %}
 
     <style>
         .profile-mini-photo {
             height: 50px;
-            width: auto;
-            max-width: 150px;
-            border-radius: 100%;
+            width: 50px;
+            border-radius: 50%;
         }
         .sign-in-error {
-            font-size: 14px;
-            color: orangered;
             margin-bottom: 5px;
+            color: orangered;
+            font-size: 14px;
         }
         .menu {
             margin-left: 15px;
@@ -42,21 +43,25 @@
             z-index: 5;
         }
         .search {
-            height: 30px;
-            width: 40%;
-            min-width: 320px;
-            margin-left: 190px;
             margin-top: -45px;
+            margin-left: 187px;
+            min-width: 320px;
+            width: 40%;
+            height: 30px;
             position: absolute;
             z-index: 1;
         }
+        .main-content {
+            min-height: 95vh;
+            min-width: 750px;
+        }
         .my-footer {
-            background-color: #333a40;
-            font-size: 16px;
+            min-width: 750px;
             width: 100%;
             height: 100px;
             float: end;
-            min-width: 750px;
+            background-color: #333a40;
+            font-size: 16px;
         }
         .my-footer-content {
             display: inline-block;
@@ -68,12 +73,13 @@
 </head>
 <body>
     <nav class="navbar navbar-expand navbar-light bg-light" style="min-width: 750px;">
-        <a class="navbar-brand" href="/" style="color: navy; font-size: 25px;"><em><b><span style="color: forestgreen">Re</span>_restrore</b></em></a>
+        <a class="navbar-brand" href="/" style="color: forestgreen; font-size: 25px;"><em><b>New:<span style="color: navy">Store</span></b></em></a>
         <div class="collapse navbar-collapse flex-row-reverse" id="navbarNavAltMarkup1">
             <div class="navbar-nav">
                 {% if authorization['id'] %}
-                    <a href="/lk"><img src="{% if authorization['photo'] %}{{ authorization['photo'] }}{% else %}static/profiles/NoPhoto.jpg{% endif %}",
-                                       alt="Упс..." class="nav-item nav-link profile-mini-photo"></a>
+                    <a href="/lk">
+                        <img class="profile-mini-photo nav-item nav-link" src="{% if authorization['photo'] %}{{ authorization['photo'] }}{% else %}static/profiles/NoPhoto.jpg{% endif %}" alt="Упс...">
+                    </a>
                     <a class="nav-item nav-link" style="margin-top: 5px;" href="/lk">{{ authorization['login'] }}</a>
                     <div class="nav-item nav-link" style="margin-top: 5px;">/</div>
                     <a class="nav-item nav-link" href="/sign-out" style="margin-right: 20px; margin-top: 5px;">Выход</a>
@@ -118,6 +124,7 @@
         </div>
     </nav>
 
+    <!--Автоматическое открытие формы для входа в ЛК после ошибочного ввода-->
     {% if data['errors']['authorization']['any'] %}
         <script>
             $("#sign-in-button").click();
@@ -145,7 +152,7 @@
         </div>
     </form>
 
-    <div style="min-height: 95vh; min-width: 750px;">
+    <div class="main-content">
         {% block content %}{% endblock %}
     </div>
 
@@ -158,7 +165,7 @@
             <a href="/contacts" class="btn btn-sm btn-outline-secondary" style="margin-left: 20px;">Контакты</a>
         </div>
         <div class="my-footer-content" style="float: right; margin-right: 50px; color: dimgrey;">
-            <h6>©2019, интернет-магазин Re_restore</h6>
+            <h6>© 2019, интернет-магазин New:Store</h6>
             <h6>(Все права защищены)</h6>
         </div>
     </div>

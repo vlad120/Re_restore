@@ -82,10 +82,10 @@
             <p class="change-goods-error">{{ data['errors']['edit_goods']['rus_category'] }}</p>
         {% endif %}
 
-        <input type="text" class="form-control category-input content" name="category" placeholder="Категория"
+        <input type="text" class="form-control category-input content" name="category_name" placeholder="Категория"
                class="rus-category one-line" value="/{{ data['goods']['full_category']['name'] }}">
-        {% if data['errors']['edit_goods']['category'] %}
-            <p class="change-goods-error">{{ data['errors']['edit_goods']['category'] }}</p>
+        {% if data['errors']['edit_goods']['category_name'] %}
+            <p class="change-goods-error">{{ data['errors']['edit_goods']['category_name'] }}</p>
         {% endif %}
 
         <input type="text" class="form-control content base-title one-line" placeholder="Название"

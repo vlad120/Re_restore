@@ -1,9 +1,9 @@
 ﻿"""
-    Version 1.3.2 (07.05.2019)
+    Version 1.3.3 (11.05.2019)
     Mironov Vladislav
 """
 
-from flask import Flask, render_template, redirect, request, make_response
+from flask import Flask, render_template, redirect, request, make_response, send_from_directory
 from flask_restful import reqparse, Api, Resource
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -21,9 +21,6 @@ app.config['SECRET_KEY'] = 'myOwn_secretKey_nobodyCan_hackIt'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///all_data.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
-
-NO_GOODS_PHOTO = '/static/goods/NoPhoto.jpg'
-NO_PROFILE_PHOTO = '/static/profiles/NoPhoto.jpg'
 
 
 def get_authorization(tmp_login=None, tmp_password=None, img=False, params=None):
@@ -114,6 +111,38 @@ def curr_time():
     return str(datetime.today())[:19]
 
 
+def change_goods_category(goods, new_category, errors=dict()):
+    """
+        Изменение категории товара:
+        goods - GoodsModel Object
+        new_category - CategoryModel Object
+    """
+    try:
+        # если это последний товар в категории
+        if len(GoodsModel.query.filter_by(category_name=goods.category_name).all()) == 1:
+            # и если новая категория с таким системным названием уже существует
+            if CategoryModel.query.filter_by(name=new_category.name).first():
+                # приписываем ее товару
+                goods.category_name = new_category.name
+            else:
+                # иначе просто переименовываем старую (не забывая о товаре)
+                goods.category.name = new_category.name
+                goods.category.rus_name = new_category.rus_name
+                goods.category_name = new_category.name
+
+        # иначе, если новой категории еще не существует, добавляем ее в БД
+        elif not CategoryModel.query.filter_by(name=new_category.name).first():
+            db.session.add(new_category)
+            goods.category_name = new_category.name  # и меняем ее у товара
+
+        db.session.commit()
+    except Exception as e:
+        logging.error("GoodsAPI Error "
+                      "(edit goods {} DB category):\t{}".format(goods.id, e))
+        errors['category_name'] = "Edit DB error"
+    return errors
+
+
 class GoodsModel(db.Model):
     id = db.Column(db.Integer, unique=True, primary_key=True, autoincrement=True)
     name = db.Column(db.String(80), nullable=False)
@@ -121,7 +150,8 @@ class GoodsModel(db.Model):
     short_description = db.Column(db.String(120), nullable=False)
     price = db.Column(db.Integer, nullable=False)
     count = db.Column(db.Integer, nullable=False)
-    category = db.Column(db.String(150), nullable=False)
+    category_name = db.Column(db.String(150), db.ForeignKey('category_model.name'), nullable=False)
+    category = db.relationship('CategoryModel', backref=db.backref('GoodsModel'))
     len_photos = db.Column(db.CHAR(2), default="0")  # количество фото (string)
     date_changes = db.Column(db.CHAR(19))
 
@@ -149,13 +179,11 @@ class GoodsModel(db.Model):
         if count_req:
             d['count'] = self.count
         if category_req:
-            d['category'] = self.category
+            d['category'] = self.category_name
         if full_category_req:
-            c = CategoryModel.query.filter_by(name=self.category).first()
-            if c:
-                d['full_category'] = c.to_dict()
+            d['full_category'] = self.category.to_dict()
         if full_link_req:
-            d['full_link'] = '/{}/{}'.format(self.category, self.id)
+            d['full_link'] = '/{}/{}'.format(self.category_name, self.id)
         if photo_req:
             if self.len_photos == "0":
                 d['photo'] = NO_GOODS_PHOTO
@@ -171,25 +199,6 @@ class GoodsModel(db.Model):
                 d['photos'] = ['/{}/{}.png?{}'.format(folder, i + 1, self.date_changes) for i in range(n)]
                 d['len_photos'] = n
         return d
-
-    def change_category(self, new_category, errors=dict()):
-        try:
-            old_category = CategoryModel.query.filter_by(name=self.category).first()
-            if len(GoodsModel.query.filter_by(category=old_category.name).all()) == 1:
-                # если это последний товар в категории, удаляем ее
-                db.session.delete(old_category)
-                db.session.commit()
-            if not CategoryModel.query.filter_by(name=new_category.name).first():
-                # если новой категории еще не существует, добавляем ее в БД
-                db.session.add(new_category)
-                db.session.commit()
-            self.category = new_category.name
-            db.session.commit()
-        except Exception as e:
-            logging.error("GoodsAPI Error "
-                          "(edit goods {} DB category):\t{}".format(self.id, e))
-            errors['category'] = "Edit DB error"
-        return errors
 
 
 class CategoryModel(db.Model):
@@ -245,7 +254,7 @@ class UserModel(db.Model):
     email = db.Column(db.String(120), nullable=False)
     login = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(200), nullable=False)
-    subscription = db.Column(db.SMALLINT, default=1)
+    subscription = db.Column(db.Integer, default=1)
     photo = db.Column(db.CHAR(1), default='0')  # 0 - нет фото, 1 - есть
     date_changes = db.Column(db.CHAR(19))
     basket = db.Column(db.String, default='{"basket": []}')
@@ -358,7 +367,7 @@ class DataTemplate:
 
     def get_main_data(self):  # главная страница
         try:
-            interesting_goods = '10'
+            interesting_goods = 9
             api_response = goodsAPI.get('random', params={'n': interesting_goods})
             if api_response['success']:
                 goods = api_response['goods']
@@ -396,7 +405,7 @@ class DataTemplate:
             goods_response = goodsAPI.get('all', a=a)
             orders_response = orderAPI.get('all', a=a)
             users_response = userAPI.get('all', a=a)
-            data = {'curr_category': 'goods',
+            data = {'curr_section': 'goods',
                     'goods': goods_response['goods'] if goods_response['success'] else [],
                     'orders': orders_response['orders'] if orders_response['success'] else [],
                     'users': users_response['users'] if users_response['success'] else [],
@@ -407,7 +416,7 @@ class DataTemplate:
                     'last': {'add_goods': {}}
                     }
             for i in ['name', 'description', 'short_description',
-                      'price', 'count', 'category']:
+                      'price', 'count', 'category_name', 'rus_category']:
                 data['errors']['add_goods'][i] = None
                 data['last']['add_goods'][i] = ''
             return data
@@ -428,7 +437,7 @@ class DataTemplate:
 
     def get_edit_goods_data(self):
         return {'errors': {'edit_goods': {'rus_category': None,
-                                          'category': None,
+                                          'category_name': None,
                                           'name': None,
                                           'price': None,
                                           'count': None,
@@ -561,7 +570,7 @@ class AuthorizationAPI(Resource):
             if phone.isdigit() and (phone[0] == '7' or (phone[0] in '89' and not plus)):
                 if phone[0] in '78' and len(phone) == 11:
                     args['phone'] = '+7' + phone[1:]
-                elif len(phone) == 10:
+                elif len(phone) == 10 and phone[0] == '9':
                     args['phone'] = '+7' + phone
                 else:
                     errors['phone'] = "Некорректный номер телефона."
@@ -718,7 +727,7 @@ class UserAPI(Resource):
                     if phone.isdigit() and (phone[0] == '7' or (phone[0] in '89' and not plus)):
                         if phone[0] in '78' and len(phone) == 11:
                             phone = '+7' + phone[1:]
-                        elif len(phone) == 10:
+                        elif len(phone) == 10 and phone[0] == '9':
                             phone = '+7' + phone
                         else:
                             errors['phone'] = "Некорректный номер телефона."
@@ -848,7 +857,7 @@ class GoodsAPI(Resource):
             category = CategoryModel.query.filter_by(name=params['category']).first()
             if category:
                 try:
-                    goods = GoodsModel.query.filter_by(category=category.name).all()
+                    goods = GoodsModel.query.filter_by(category_name=category.name).all()
                     # сортировка товаров
                     if 'sort' in params:
                         if params['sort'] == 'NEW':
@@ -922,15 +931,15 @@ class GoodsAPI(Resource):
                         errors['name'] = unknown_err
 
                 # категории товара
-                curr_category = CategoryModel.query.filter_by(name=goods.category).first()
-                if args['category'] and args['category'] != goods.category:
+                curr_category = goods.category
+                if args['category_name'] and args['category_name'] != goods.category_name:
                     try:
-                        if len(args['category']) > 150:
-                            m = "Категория ({}) должна быть не более 150 символов.".format(len(args['category']))
-                            errors['category'] = m
-                        elif '/' in args['category']:
+                        if len(args['category_name']) > 150:
+                            m = "Категория ({}) должна быть не более 150 символов.".format(len(args['category_name']))
+                            errors['category_name'] = m
+                        elif '/' in args['category_name']:
                             m = "Категория не может содержать символ '/' в названии."
-                            errors['category'] = m
+                            errors['category_name'] = m
                         else:
                             # если нужно изменить и русскую категорию
                             if args['rus_category'] != curr_category.rus_name:
@@ -942,7 +951,7 @@ class GoodsAPI(Resource):
                                     m = "Категория не может содержать символ '/' в названии."
                                     errors['rus_category'] = m
                                 else:
-                                    check_category = CategoryModel.query.filter_by(name=args['category']).first()
+                                    check_category = CategoryModel.query.filter_by(name=args['category_name']).first()
                                     check_rus_category = CategoryModel.query.filter_by(rus_name=args['rus_category'])
                                     check_rus_category = check_rus_category.first()
                                     # если русская категория существует в БД
@@ -951,40 +960,46 @@ class GoodsAPI(Resource):
                                         if check_rus_category.name == check_category.name:
                                             # т.е. если и русская и системная
                                             # категории есть и соответствуют друг другу в БД
-                                            goods.change_category(check_category, errors=errors)
+                                            new_category = CategoryModel(name=args['category_name'],
+                                                                         rus_name=args['rus_category'])
+                                            change_goods_category(goods, new_category, errors)
                                         else:
                                             m = "Русская категория должна быть уникальной для каждой " \
-                                                "системной категории (конфликт: {}).".format(check_rus_category.name)
+                                                "системной категории (конфликт с '{}').".format(check_rus_category.name)
                                             errors['rus_category'] = m
                                     # если системная категория есть в БД
                                     elif check_category:
                                         # на русскую категорию проверку делать уже бессмысленно (сделано выше)
                                         m = "Русская категория должна быть уникальной для каждой " \
-                                            "системной категории (конфликт: {}).".format(check_category.name)
+                                            "системной категории (конфликт с '{}').".format(check_category.name)
                                         errors['rus_category'] = m
                                     else:
                                         # т.е. если ни русской, ни системной категории нет в БД,
                                         # создаем новую категорию
-                                        new_category = CategoryModel(name=args['category'],
+                                        new_category = CategoryModel(name=args['category_name'],
                                                                      rus_name=args['rus_category'])
-                                        goods.change_category(new_category, errors=errors)
+                                        change_goods_category(goods, new_category, errors)
                             else:
-                                # если в текущей категории присутствуют другие товары
-                                if len(GoodsModel.query.filter_by(category=goods.category).all()) > 1:
-                                    m = "Изменять системную категорию можно только вкупе с русской, " \
-                                        "либо убедившишь, что товар единственный в данной категории " \
-                                        "(тогда русская категория изменится автоматически)."
-                                    errors['category'] = m
+                                rus_category = CategoryModel.query.filter_by(rus_name=args['rus_category']).first()
+                                if rus_category:
+                                    # т.е. если категории с новым системным именем не существует
+                                    # (ее надо создать), но русская категория уже занята другой
+                                    m = "Русская категория должна быть уникальной для каждой " \
+                                        "системной категории (конфликт с '{}').".format(rus_category.name)
+                                    errors['rus_category'] = m
                                 else:
-                                    # т.е. если это единственный товар категории,
-                                    # удаляем старую категорию и создаем новую в БД
-                                    new_category = CategoryModel(name=args['category'],
+                                    # т.е. если нужно изменить только системную категорию,
+                                    # создаем ее (если она еще не существует) и присваиваем товару
+                                    new_category = CategoryModel(name=args['category_name'],
                                                                  rus_name=curr_category.rus_name)
-                                    goods.change_category(new_category, errors=errors)
+                                    change_goods_category(goods, new_category, errors)
+                        # создаём новый объект товара во избежание
+                        # конфликтов со временем в sqlalchemy
+                        goods = GoodsModel.query.filter_by(id=goods.id).first()
                     except Exception as e:
                         logging.error("GoodsAPI Error "
                                       "(set goods {} category while edit info):\t{}".format(goods.id, e))
-                        errors['category'] = unknown_err
+                        errors['category_name'] = unknown_err
 
                 elif args['rus_category']:
                     try:
@@ -1000,11 +1015,11 @@ class GoodsAPI(Resource):
                                 category = CategoryModel.query.filter_by(rus_name=args['rus_category']).first()
                                 # существует ли уже новая категория
                                 if category:
-                                    m = "Данная русския категория занята другой системной ({}).".format(category.name)
+                                    m = "Категория '{}' занята '{}'.".format(args['rus_category'], category.name)
                                     errors['rus_category'] = m
                                 # если в текущей системной категории находится только 1 товар (этот)
                                 # и тем самым изенение не повлияет на остальных
-                                elif len(GoodsModel.query.filter_by(category=curr_category.name).all()) == 1:
+                                elif len(GoodsModel.query.filter_by(category_name=curr_category.name).all()) == 1:
                                     # меняем русское название системной категории
                                     curr_category.rus_name = args['rus_category']
                                     db.session.commit()
@@ -1137,7 +1152,7 @@ class GoodsAPI(Resource):
                 return make_success(False, message="Access error")
 
             all_fields = ['name', 'description', 'short_description',
-                          'price', 'count', 'category', 'rus_category']
+                          'price', 'count', 'category_name', 'rus_category']
             errors = dict()
             for field in all_fields:
                 errors[field] = None
@@ -1174,9 +1189,9 @@ class GoodsAPI(Resource):
                 if len(args['short_description']) > 120:
                     errors['short_description'] = "Краткое описание ({}) должно " \
                                                   "быть не более 120 символов.".format(len(args['short_description']))
-                if len(args['category']) > 150:
-                    errors['category'] = "Категория ({}) не должна " \
-                                         "превышать 150 символов.".format(len(args['category']))
+                if len(args['category_name']) > 150:
+                    errors['category_name'] = "Категория ({}) не должна " \
+                                              "превышать 150 символов.".format(len(args['category_name']))
                 if len(args['rus_category']) > 150:
                     errors['rus_category'] = "Категория ({}) не должна " \
                                              "превышать 150 символов.".format(len(args['rus_category']))
@@ -1184,16 +1199,16 @@ class GoodsAPI(Resource):
                 # содержание запрещенных символов
                 if '/' in args['name']:
                     errors['name'] = "Название не может содержать символ '/'."
-                if '/' in args['category']:
-                    errors['category'] = "Категория не может содержать символ '/'."
+                if '/' in args['category_name']:
+                    errors['category_name'] = "Категория не может содержать символ '/'."
                 if '/' in args['rus_category']:
                     errors['rus_category'] = "Категория не может содержать символ '/'."
 
                 if any(err for err in errors.values()):
                     return make_success(False, message="Too much data", errors=errors)
 
-                if not CategoryModel.query.filter_by(name=args['category']).first():
-                    c = CategoryModel(name=args['category'], rus_name=args['rus_category'])
+                if not CategoryModel.query.filter_by(name=args['category_name']).first():
+                    c = CategoryModel(name=args['category_name'], rus_name=args['rus_category'])
                     db.session.add(c)
                 args.pop('rus_category')
 
@@ -1230,7 +1245,7 @@ class GoodsAPI(Resource):
                 return make_success(False, message="Access Error")
             try:
                 goods = GoodsModel.query.filter_by(id=arg).first()
-                category = goods.category
+                category_name = goods.category_name
                 if goods:
                     db.session.delete(goods)
                     db.session.commit()
@@ -1240,10 +1255,9 @@ class GoodsAPI(Resource):
                         for item in listdir(folder):
                             remove('{}/{}'.format(folder, item))
                         rmdir(folder)
-                    c = CategoryModel.query.filter_by(name=category).all()
                     # если товар последний в категории, удаляем ее
-                    if len(c) == 1:
-                        db.session.delete(c[0])
+                    if not GoodsModel.query.filter_by(category_name=category_name).first():
+                        db.session.delete(CategoryModel.query.filter_by(name=category_name).first())
                         db.session.commit()
                     return make_success()
                 return make_success(False, message="Goods doesn't exist")
@@ -1332,7 +1346,7 @@ class SearchAPI(Resource):
             return [[], [], consist, small_part]
 
         # умное избавление от одинаковых результатов
-        # + если надо, преврящаем все goods_id в данные для карточек
+        # + если надо, преобразуем все goods_id в данные для карточек
         def remove_same(lst):
             new = []
             for item in lst:
@@ -1720,8 +1734,8 @@ class OrderAPI(Resource):
 
 
 @app.route('/', methods=["GET", "POST"])
-def re_restore():
-    t = 'Добро пожаловать в Re_restore!'
+def new_store():
+    t = 'New:Store'
     data = D.get_data(base_req=True, main_req=True)
 
     if request.method == "POST":
@@ -1776,16 +1790,16 @@ def search():
         return server_error()
 
 
-@app.route('/<string:category>', methods=["GET", "POST"])
-def goods_category(category):
+@app.route('/<string:category_name>', methods=["GET", "POST"])
+def goods_category(category_name):
     data = D.get_base_data()
     data['sorting'] = request.cookies.get('sorting')
     if not data['sorting']:
         data['sorting'] = 'NEW'
 
-    api_response = goodsAPI.get('category', params={'category': category, 'sort': data['sorting']})
+    api_response = goodsAPI.get('category', params={'category': category_name, 'sort': data['sorting']})
     if not api_response['success']:
-        if not CategoryModel.query.filter_by(name=category).first():
+        if not CategoryModel.query.filter_by(name=category_name).first():
             return not_found()
         return server_error()
 
@@ -1811,7 +1825,7 @@ def goods_category(category):
 
         if 'sorting' in form:
             data['sorting'] = form['sorting']
-            api_response = goodsAPI.get('category', params={'category': category, 'sort': data['sorting']})
+            api_response = goodsAPI.get('category', params={'category': category_name, 'sort': data['sorting']})
             if api_response['success']:
                 data['goods'] = api_response['goods']
             resp = make_response(render('goods-category.html', title=t, data=data))
@@ -1821,9 +1835,9 @@ def goods_category(category):
     return render('goods-category.html', title=t, data=data)
 
 
-@app.route('/<string:category>/<int:goods_id>', methods=["GET", "POST"])
-def full_goods(category, goods_id):
-    if not CategoryModel.query.filter_by(name=category).first():
+@app.route('/<string:category_name>/<int:goods_id>', methods=["GET", "POST"])
+def full_goods(category_name, goods_id):
+    if not CategoryModel.query.filter_by(name=category_name).first():
         return not_found()
     data = D.get_base_data()
     if not data:
@@ -1989,7 +2003,7 @@ def lk_admin():
         data = D.get_data(base_req=True, lk_admin_req=True)
         if not data:
             return server_error()
-        category = data['curr_category']
+        section = data['curr_section']
 
         if request.method == 'GET':
             return render("lk-admin.html", title=t, data=data)
@@ -2000,39 +2014,39 @@ def lk_admin():
                    'add_goods': {}}
             last = dict()
             if 'addGoodsBtn' in form:
-                category = 'goods'
+                section = 'goods'
                 resp = goodsAPI.post('new', request_data=form)
                 if not resp['success']:
                     err['add_goods'] = resp['errors']
                     last['add_goods'] = form
                     category = 'addGoods'
             elif 'deleteGoodsBtn' in form:
-                category = 'goods'
+                section = 'goods'
                 resp = goodsAPI.delete(form['deleteGoodsBtn'])
                 if not resp['success']:
                     err['add_data']['goods'] = resp['message']
             elif 'deleteOrderBtn' in form:
-                category = 'orders'
+                section = 'orders'
                 resp = orderAPI.delete(form['deleteOrderBtn'])
                 if not resp['success']:
                     err['add_data']['orders'] = resp['message']
             elif 'cancelOrderBtn' in form:
-                category = 'orders'
+                section = 'orders'
                 resp = orderAPI.put(form['cancelOrderBtn'], params={'status': 'cancel'})
                 if not resp['success']:
                     err['add_data']['orders'] = resp['message']
             elif 'deliveredOrderBtn' in form:
-                category = 'orders'
+                section = 'orders'
                 resp = orderAPI.put(form['deliveredOrderBtn'], params={'status': 'delivered'})
                 if not resp['success']:
                     err['add_data']['orders'] = resp['message']
             elif 'doneOrderBtn' in form:
-                category = 'orders'
+                section = 'orders'
                 resp = orderAPI.put(form['doneOrderBtn'], params={'status': 'done'})
                 if not resp['success']:
                     err['add_data']['orders'] = resp['message']
             elif 'deleteUserBtn' in form:
-                category = 'users'
+                section = 'users'
                 resp = userAPI.delete(form['deleteUserBtn'])
                 if not resp['success']:
                     err['add_data']['users'] = resp['message']
@@ -2043,7 +2057,7 @@ def lk_admin():
                 data['errors'].update(err)
             if last:
                 data['last'].update(last)
-            data['curr_category'] = category
+            data['curr_section'] = section
         return render("lk-admin.html", title=t, data=data)
     elif verify_authorization():
         return redirect('/lk')
@@ -2073,6 +2087,8 @@ def user_basket():
 def make_order():
     t = "Оформление заказа"
     data = D.get_data(base_req=True, order_req=True)
+    if not data:
+        return redirect('/')
     if 'order_data' not in data:
         return access_error()
 
@@ -2113,15 +2129,15 @@ def show_help():
     return render("help.html", title=t, data=data)
 
 
-def error(err=520, message='Что-то пошло не так :('):
+def error(err=520, message='Что-то пошло не так :(', t='Страница не найдена'):
     data = D.get_base_data(anyway=True)
     data.update({'message': message, 'type': err})
-    return render('error.html', data=data)
+    return render('error.html', title=t, data=data)
 
 
 @app.errorhandler(401)
 def access_error(err=None, message=''):
-    return error(401, 'Отказано в доступе :(\n{}'.format(message))
+    return error(401, 'Отказано в доступе :(\n{}'.format(message), t='Отказано в доступе')
 
 
 @app.errorhandler(404)
@@ -2131,7 +2147,13 @@ def not_found(err=None, message=''):
 
 @app.errorhandler(500)
 def server_error(err=None, message=''):
-    return error(500, 'Ошибка сервера :(\n{}'.format(message))
+    return error(500, 'Ошибка сервера :(\n{}'.format(message), t='Ошибка сервера')
+
+
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(path.join(app.root_path, 'static'),
+                               'favicon.ico', mimetype='image/vnd.microsoft.icon')
 
 
 @app.route('/index')
@@ -2171,10 +2193,19 @@ ADMIN_ID = -1
 ADMIN_LOGIN = "admin"
 ADMIN_PASSWORD = "admin"
 
+# пути к фотографиям по умолчанию
+NO_GOODS_PHOTO = '/static/goods/NoPhoto.jpg'
+NO_PROFILE_PHOTO = '/static/profiles/NoPhoto.jpg'
+
+
+# инициализируем класс, обеспечивающий
+# шаблонными данными для формирования страниц
 D = DataTemplate()
+
+# создаем все таблицы БД
 db.create_all()
 
-# Все API
+# инициализируем все API (для работы с ними изнутри)
 userAPI = UserAPI()
 goodsAPI = GoodsAPI()
 searchAPI = SearchAPI()
@@ -2182,7 +2213,7 @@ basketAPI = BasketAPI()
 orderAPI = OrderAPI()
 authorizationAPI = AuthorizationAPI()
 
-# подключение API
+# подключаем API
 api.add_resource(AuthorizationAPI, '/api/authorization/<path:r>')
 api.add_resource(UserAPI, '/api/users/<path:r>')
 api.add_resource(GoodsAPI, '/api/goods/<path:r>')
