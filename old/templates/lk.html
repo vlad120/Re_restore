@@ -1,0 +1,272 @@
+{% extends "Base.html" %}
+
+{% block style %}
+    <style type="text/css">
+        .content { margin-left: 16px; }
+        .one-line { display: inline-block; }
+        .base-title {
+            margin-top: 70px;
+            color: green;
+        }
+        .profile-photo-place {
+            min-width: 260px;
+            max-width: 305px;
+            max-height: 305px;
+            width: 35%;
+            overflow: hidden;
+            border-radius: 7px;
+        }
+        .profile-photo-place img {
+            min-width: 260px;
+            width: 100%;
+            border-radius: 7px;
+        }
+        .choose-photo {
+            margin-top: 15px;
+            margin-bottom: 20px;
+            min-width: 260px;
+            max-width: 305px;
+            width: 35%;
+        }
+        .info {
+            margin-right: 16px;
+            margin-bottom: 20px;
+            padding-top: 7px;
+            padding-left: 10px;
+            border: 3px solid teal;
+            border-radius: 10px;
+            min-width: 430px;
+            max-width: 550px;
+            width: 50%;
+            overflow: hidden;
+            float: right;
+            text-align: left;
+            font-size: 20px;
+            font-family: Helvetica;
+        }
+        .info-parameter {
+            margin-bottom: 0;
+            width: 190px;
+            font-weight: bolder;
+            font-family: "Arial Black";
+        }
+        .info-form {
+            margin-right: 10px;
+            padding-top: 0;
+            padding-bottom: 0;
+            border: 0;
+            border-radius: 3px;
+            width: 95%;
+            height: 28px;
+            float: right;
+            font-weight: bold;
+            color: #00a0a0;
+        }
+        .change-info-error {
+            margin-top: 5px;
+            margin-bottom: 0;
+            margin-right: 10px;
+            width: 95%;
+            float: right;
+            color: orangered;
+            font-size: 12px;
+        }
+        .subscription-checkbox-label {
+            margin: 7px;
+            color: teal;
+            font-weight: bold;
+            font-size: 18px;
+        }
+        .btn-delete-profile {
+            margin-bottom: 5px;
+            float: right;
+            margin-right: 10px;
+        }
+        .order-card {
+            margin-bottom: 10px;
+            margin-right: 16px;
+            min-width: 600px;
+            width: 60%;
+        }
+        .card-header { padding-bottom: 5px; }
+        .card-header-text {
+            margin-bottom: 0;
+            font-size: 18px;
+            color: seagreen;
+        }
+        .status {
+            float: right;
+            padding-right: 20px;
+        }
+        .card-text { margin-bottom: 0; }
+        .btn-cancel-order {
+            float: right;
+            margin-top: -40px;
+        }
+        .order-title {
+            color: teal;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        .edit-order-error {
+            font-size: 18px;
+            color: orangered;
+            margin-bottom: 15px;
+            margin-top: 15px;
+        }
+        p { font-family: Helvetica; }
+    </style>
+{% endblock %}
+
+
+{% block content %}
+    <h2 class="content base-title"><b>Личный кабинет</b></h2>
+    <br>
+
+    <div class="profile">
+        <div class="profile-photo-place content one-line">
+            <img src="{{ data['user']['photo'] }}" alt="Упс...">
+        </div>
+
+        <div class="info">
+            <form method="post">
+                <table style="color: teal; width: 100%;">
+                    <tr>
+                        <td><p class="info-parameter">Имя:</p></td>
+                        <td>
+                            <input class="info-form" type="text" value="{{ data['user']['name'] }}" name="name">
+                            {% if data['errors']['change_profile_info']['name'] %}
+                                <p class="change-info-error">{{ data['errors']['change_profile_info']['name'] }}</p>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><p class="info-parameter">Фамилия:</p></td>
+                        <td>
+                            <input class="info-form" type="text" value="{{ data['user']['surname'] }}" name="surname">
+                            {% if data['errors']['change_profile_info']['surname'] %}
+                                <div class="change-info-error">{{ data['errors']['change_profile_info']['surname'] }}</div>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><p class="info-parameter">Телефон:</p></td>
+                        <td>
+                            <input class="info-form" name="phone" value="{{ data['user']['phone'] }}">
+                            {% if data['errors']['change_profile_info']['phone'] %}
+                                <p class="change-info-error">{{ data['errors']['change_profile_info']['phone'] }}</p>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><p class="info-parameter">E-mail:</p></td>
+                        <td>
+                            <input class="info-form" type="email" value="{{ data['user']['email'] }}" name="email">
+                            {% if data['errors']['change_profile_info']['email'] %}
+                                <p class="change-info-error">{{ data['errors']['change_profile_info']['email'] }}</p>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><p class="info-parameter">Логин:</p></td>
+                        <td><input class="info-form" type="text" value="{{ data['user']['login'] }}" readonly="readonly"></td>
+                    </tr>
+                    <tr>
+                        <td><p class="info-parameter">ID:</p></td>
+                        <td><input class="info-form" type="text" value="{{ data['user']['id'] }}" readonly="readonly"></td>
+                    </tr>
+                    <tr>
+                        <td><p class="info-parameter">Новый пароль:</p></td>
+                        <td>
+                            <input class="info-form" type="password" name="new_password">
+                            {% if data['errors']['change_profile_info']['new_password'] %}
+                                <p class="change-info-error">{{ data['errors']['change_profile_info']['new_password'] }}</p>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><p class="info-parameter">Старый пароль:</p></td>
+                        <td>
+                            <input class="info-form" style="border: 2px solid teal; " type="password" name="check_password">
+                            {% if data['errors']['change_profile_info']['check_password'] %}
+                                <p class="change-info-error">{{ data['errors']['change_profile_info']['check_password'] }}</p>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </table>
+                <p style="margin-bottom: 5px;">
+                    <input type="checkbox" id="subscriptionCheck" name="subscription" {% if data['user']['subscription'] %}checked{% endif %}>
+                    <label class="subscription-checkbox-label" for="subscriptionCheck">Подписка на e-mail рассылку</label>
+                </p>
+                <button type="submit" class="btn btn-info one-line" style="margin-bottom: 10px;" name="changeUserInfoBtn">Сохранить</button>
+                <form method="post">
+                    <button type="submit" class="btn btn-secondary btn-delete-profile one-line"
+                            name="deleteUserBtn" value="{{ data['user']['id'] }}">Удалить профиль</button>
+                </form>
+            </form>
+        </div>
+
+        <form method="post" enctype="multipart/form-data">
+            <div class="input-group content choose-photo">
+                <div class="custom-file">
+                    <input type="file" class="custom-file-input" id="inputFile1" aria-describedby="inputGroupFileAddon04" name="photo">
+                    <label class="custom-file-label" for="inputFile1">Выберите фото</label>
+                </div>
+                <div class="input-group-append">
+                    <button class="btn btn-outline-secondary" type="submit">Ок</button>
+                </div>
+            </div>
+            {% if data['errors']['change_profile_info']['photo'] %}
+                <p class="change-info-error">{{ data['errors']['change_profile_info']['photo'] }}</p>
+            {% endif %}
+        </form>
+
+        {% if data['errors']['edit_order'] %}
+            <h3 class="edit-order-error content">{{ data['errors']['edit_order'] }}</h3>
+        {% endif %}
+    </div>
+
+    <div class="content" style="clear: both;">
+        <h2 class="content order-title">Мои заказы</h2>
+        {% for item in data['orders'] %}
+            <div class="card border-info mb-3 order-card">
+                <div class="card-header">
+                    <b>
+                        <p class="one-line card-header-text"><i>№{{ item['id'] }}</i></p>
+                        <p class="one-line card-header-text status">
+                            {% if item['status'] == 'processing' %}
+                                <span style="color: teal;">Выполняется</span>
+                            {% elif item['status'] == 'delivered' %}
+                                <span style="color: green;">Доставлено в пункт выдачи</span>
+                            {% elif item['status'] == 'done' %}
+                                <span style="color: limegreen;">Выполнено</span>
+                            {% elif item['status'] == 'cancel' %}
+                                <span style="color: orangered;">Отменён</span>
+                            {% else %}
+                                <span style="color: #333a40">Неизвестно</span>
+                            {% endif %}
+                        </p>
+                    </b>
+                </div>
+                <div class="card-body">
+                    <ul class="list-group list-group-horizontal-sm">
+                        {% for g in item['goods'] %}
+                            <li class="list-group-item"><a href="{{ g['full_link'] }}" target="_blank">{{ g['name'] }}</a> - {{ g['price'] }}руб * {{ g['count']}}шт</li>
+                        {% endfor %}
+
+                    </ul>
+                    -------------------------------------
+                    <p class="card-text"><b>Итого:</b> {{ item['total'] }}руб</p>
+                    {% if item['status'] in ['processing', 'delivered'] %}
+                        <form method="post" class="one-line" style="float: right; margin-right: 20px; margin-top: 5px;">
+                            <button type="submit" class="btn btn-secondary btn-cancel-order" name="cancelOrderBtn" value="{{ item['id'] }}">Отменить</button>
+                        </form>
+                    {% endif %}
+                </div>
+            </div>
+        {% endfor %}
+        {% if not data['orders'] %}
+            <h4 class="content">Здесь пока ничего нет ;)</h4>
+        {% endif %}
+    </div>
+{% endblock %}
