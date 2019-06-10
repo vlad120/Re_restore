@@ -13,6 +13,8 @@ NO_PROFILE_PHOTO = '/static/profiles/NoPhoto.jpg'
 class Category(models.Model):
     name = models.CharField(max_length=80, primary_key=True)
     rus_name = models.CharField(max_length=100)
+    parent = models.OneToOneField('Category', on_delete=models.PROTECT, null=True)
+    active = models.BooleanField(default=False)
 
     def __repr__(self):
         return '<Category {}>'.format(self.name)
@@ -20,14 +22,23 @@ class Category(models.Model):
     def __str__(self):
         return f'Category {self.name}'
 
-    def to_dict(self, name_req=True, rus_name_req=True, link_req=True):
+    def to_dict(self, name_req=True, rus_name_req=True,
+                link_req=True, active_req=False):
         d = dict()
         if name_req:
             d['name'] = self.name
         if rus_name_req:
             d['rus_name'] = self.rus_name
         if link_req:
-            d['link'] = '/' + self.name
+            link = [self.name]
+            curr = self
+            while curr.parent:  # собираем родительские категории
+                curr = curr.parent
+                link.append(curr.name)
+            # переворачиваем полученные категории и собираем ссылку
+            d['link'] = '/' + '/'.join(reversed(link))
+        if active_req:
+            d['active'] = self.active
         return d
 
     class Meta:
@@ -36,7 +47,6 @@ class Category(models.Model):
 
 
 class Product(models.Model):
-    id = models.PositiveIntegerField(primary_key=True, unique=True)
     name = models.CharField(max_length=80)
     description = models.CharField(max_length=15000)
     short_description = models.CharField(max_length=120)
@@ -104,7 +114,6 @@ class Product(models.Model):
 
 
 class Order(models.Model):
-    id = models.PositiveIntegerField(primary_key=True, unique=True)
     total = models.PositiveIntegerField()
     goods = models.CharField(max_length=2000)
     status = models.CharField(max_length=10, default="processing")

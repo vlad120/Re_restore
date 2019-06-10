@@ -124,7 +124,7 @@
         </div>
     </nav>
 
-    <!--Автоматическое открытие формы для входа в ЛК после ошибочного ввода-->
+    {# Автоматическое открытие формы для входа в ЛК после ошибочного ввода #}
     {% if data.errors.authorization.any %}
         <script>
             $("#sign-in-button").click();
@@ -136,7 +136,7 @@
             Каталог товаров
         </button>
         <div class="dropdown-menu" aria-labelledby="dropdownMenuButton">
-            {% for item in data.menu_items %}
+            {% for item in menu_items %}
                 <a class="dropdown-item" href="{{ item.link }}">{{ item.rus_name }}</a>
             {% endfor %}
         </div>
@@ -155,7 +155,6 @@
     <div class="main-content">
         {% block content %}{% endblock %}
     </div>
-
     <br>
     <br>
     <br>

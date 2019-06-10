@@ -35,12 +35,17 @@
 {% block content %}
     <div id="carouselIndicators" class="carousel slide" data-ride="carousel" style="margin-top: 0;">
       <ol class="carousel-indicators">
-          <li data-target="#carouselIndicators" data-slide-to="1" class="active"></li>
+          {% for n, _ in slides %}
+              <li data-target="#carouselIndicators" data-slide-to="{{ n }}" {% if n == 0 %}class="active"{% endif %}></li>
+          {% endfor %}
       </ol>
       <div class="carousel-inner">
-          <div class="carousel-item active">
-              <img src="/static/main_slides/1.png" alt="Упс..." class="d-block w-100">
-          </div>
+          {% for n, slide_link in slides %}
+              <div class="carousel-item {% if n == 0 %}active{% endif %}">
+                  <img src="{{ slide_link }}" alt="Упс..." class="d-block w-100">
+              </div>
+              {{ slides.n }}
+          {% endfor %}
       </div>
       <a class="carousel-control-prev" href="#carouselIndicators" role="button" data-slide="prev">
         <span class="carousel-control-prev-icon" aria-hidden="true"></span>
