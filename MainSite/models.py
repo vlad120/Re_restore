@@ -1,13 +1,13 @@
 from django.db import models
-from json import loads
 from django.contrib.auth.models import User
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from special import *
 
 
 # пути к фотографиям по умолчанию
-NO_GOODS_PHOTO = '/static/goods/NoPhoto.jpg'
-NO_PROFILE_PHOTO = '/static/profiles/NoPhoto.jpg'
+NO_GOODS_PHOTO = 'static/goods/NoPhoto.jpg'
+NO_PROFILE_PHOTO = 'static/profiles/NoPhoto.jpg'
 
 
 class Category(models.Model):
@@ -83,7 +83,7 @@ class Product(models.Model):
         if short_description_req:
             d['short_description'] = self.short_description
         if characteristics_req:
-            d['characteristics'] = loads(self.characteristics)
+            d['characteristics'] = str_to_characteristics(self.characteristics)
         if price_req:
             d['price'] = self.price
         if count_req:
@@ -96,12 +96,12 @@ class Product(models.Model):
             d['full_link'] = f'/{self.category.name}/{self.id}'
         if photo_req:
             if self.len_photos:
-                d['photo'] = f'/static/goods/{self.id}/1.png'
+                d['photo'] = to_path('static', 'goods', self.id, '1.png')
             else:
                 d['photo'] = NO_GOODS_PHOTO
         if photos_req:
             if self.len_photos:
-                folder = f'/static/goods/{self.id}'
+                folder = to_path('static', 'goods', self.id)
                 d['photos'] = [folder + f'/{i}.png?{self.date_changes}'
                                for i in range(1, self.len_photos + 1)]
             else:
@@ -118,6 +118,7 @@ class Order(models.Model):
     goods = models.CharField(max_length=2000)
     status = models.CharField(max_length=10, default="processing")
     user = models.ForeignKey('Profile', on_delete=models.SET_NULL, null=True)
+    order_spot = models.ForeignKey('OrderSpot', on_delete=models.PROTECT, null=True)
 
     def __repr__(self):
         return '<Order {} {} {}rub>'.format(self.id, self.status, self.total)
@@ -126,18 +127,20 @@ class Order(models.Model):
         return f'Order {self.id}'
 
     def to_dict(self, id_req=True, total_req=True, goods_req=True,
-                status_req=True, user_req=True):
+                status_req=True, user_req=True, order_spot_req=True):
         d = dict()
         if id_req:
             d['id'] = self.id
         if total_req:
             d['total'] = self.total
         if goods_req:
-            d['goods'] = loads(self.goods)
+            d['goods'] = str_to_basket(self.goods)
         if status_req:
             d['status'] = self.status
         if user_req:
             d['user'] = self.user.to_dict(login_req=True, phone_req=True)
+        if order_spot_req:
+            d['order_spot'] = self.order_spot.to_dict()
         return d
 
     class Meta:
@@ -145,12 +148,55 @@ class Order(models.Model):
         verbose_name_plural = "Заказы"
 
 
+class OrderSpot(models.Model):
+    name = models.CharField(max_length=100)
+    address = models.CharField(max_length=200)
+    description = models.CharField(max_length=300)
+    working_hours = models.CharField(max_length=200)
+    volume = models.PositiveSmallIntegerField()  # количество мест для заказов
+    state = models.CharField(max_length=10, default='active')
+
+    def __repr__(self):
+        return '<OrderSpot {} {} {}>'.format(self.id, self.name, self.state)
+
+    def __str__(self):
+        return f'OrderSpot {self.id}'
+
+    def to_dict(self, id_req=True, name_req=True, address_req=False,
+                description_req=False, working_hours_req=False,
+                volume_req=False, state_req=True, all_req=False):
+        if all_req:
+            (id_req, name_req, address_req, description_req,
+             working_hours_req, volume_req, state_req) = (True for _ in range(8))
+        d = dict()
+        if id_req:
+            d['id'] = self.id
+        if name_req:
+            d['name'] = self.name
+        if address_req:
+            d['address'] = self.address
+        if description_req:
+            d['description'] = self.description
+        if working_hours_req:
+            d['working_ours'] = self.working_hours
+        if volume_req:
+            d['volume'] = self.volume
+        if state_req:
+            d['state'] = self.state
+        return d
+
+    class Meta:
+        verbose_name = "Пункт выдачи"
+        verbose_name_plural = "Пункты выдачи"
+
+
 class Profile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     phone = models.CharField(max_length=12, unique=True)
     subscription = models.BooleanField(default=True)
     photo = models.BooleanField(default=False)  # есть ли фото
-    basket = models.CharField(max_length=2000, default='{"basket": []}')
+    status = models.CharField(max_length=6, default='user')  # user | worker | admin
+    basket = models.CharField(max_length=2000, default='')
     date_created = models.DateField(auto_now_add=True)
     date_changes = models.DateField(auto_now_add=True)
 
@@ -162,10 +208,11 @@ class Profile(models.Model):
 
     def to_dict(self, id_req=True, name_req=False, surname_req=False,
                 phone_req=False, email_req=False, login_req=False,
-                photo_req=False, subscr_req=False, all_req=False):
+                photo_req=False, subscr_req=False, basket_req=False, all_req=False):
         if all_req:
-            (id_req, name_req, surname_req, email_req,
-             phone_req, login_req, photo_req, subscr_req) = (True for _ in range(8))
+            (id_req, name_req, surname_req,
+             email_req, phone_req, login_req,
+             photo_req, subscr_req, basket_req) = (True for _ in range(9))
         d = dict()
         if id_req:
             d['id'] = self.user.id
@@ -181,6 +228,8 @@ class Profile(models.Model):
             d['login'] = self.user.username
         if subscr_req:
             d['subscription'] = self.subscription
+        if basket_req:
+            d['basket'] = str_to_basket(self.basket)
         if photo_req:
             if self.photo:
                 d['photo'] = '/static/profiles/{}.png?{}'.format(self.id, self.date_changes)
