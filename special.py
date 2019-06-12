@@ -1,10 +1,17 @@
-from rest_framework.response import Response
+from django.http import JsonResponse
 import os
+import logging
+
+logger = logging.getLogger(__name__)
+
+SITE_URL = 'https://new-store.ru/'
+
+TOKEN_LEN = 70
 
 
 # получение корректного пути
-def to_path(*args):
-    return os.path.join(*args)
+def to_path(*args, static=True):
+    return os.path.join('static', *args) if static else os.path.join(*args)
 
 
 # конвертирование корзины вида {'id1': n1, 'id2': n2} в строку
@@ -34,4 +41,17 @@ def make_success(state=True, message='Ok', **kwargs):
         message = 'Ok' if state else 'Unknown Error'
     data['message'] = message
     data.update(kwargs)
-    return Response(data)
+    return JsonResponse(data)
+
+
+# генерация токена
+def make_token():
+    symbols = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+    return "".join(list({i for i in symbols * 2})[:TOKEN_LEN])
+
+
+# собрать полный url к ресурсу
+def make_url(path: str):
+    return SITE_URL + path.strip('/')
+
+

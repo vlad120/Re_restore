@@ -6,14 +6,14 @@ from special import *
 
 
 # пути к фотографиям по умолчанию
-NO_GOODS_PHOTO = 'static/goods/NoPhoto.jpg'
-NO_PROFILE_PHOTO = 'static/profiles/NoPhoto.jpg'
+NO_GOODS_PHOTO = to_path('goods', 'NoPhoto.jpg')
+NO_PROFILE_PHOTO = to_path('profiles', 'NoPhoto.jpg')
 
 
 class Category(models.Model):
     name = models.CharField(max_length=80, primary_key=True)
     rus_name = models.CharField(max_length=100)
-    parent = models.OneToOneField('Category', on_delete=models.PROTECT, null=True)
+    parent = models.OneToOneField('Category', on_delete=models.PROTECT, blank=True, null=True)
     active = models.BooleanField(default=False)
 
     def __repr__(self):
@@ -56,7 +56,7 @@ class Product(models.Model):
     category = models.ForeignKey(Category, on_delete=models.PROTECT)
     len_photos = models.PositiveSmallIntegerField(default=0)  # количество фото
     date_added = models.DateField(auto_now_add=True)
-    date_changes = models.DateField(auto_now_add=True)
+    date_changes = models.DateTimeField(auto_now_add=True)
 
     def __repr__(self):
         return '<Product {} {} {} * {}rub>'.format(self.id, self.name, self.count, self.price)
@@ -96,12 +96,12 @@ class Product(models.Model):
             d['full_link'] = f'/{self.category.name}/{self.id}'
         if photo_req:
             if self.len_photos:
-                d['photo'] = to_path('static', 'goods', self.id, '1.png')
+                d['photo'] = to_path('goods', self.id, '1.png')
             else:
                 d['photo'] = NO_GOODS_PHOTO
         if photos_req:
             if self.len_photos:
-                folder = to_path('static', 'goods', self.id)
+                folder = to_path('goods', self.id)
                 d['photos'] = [folder + f'/{i}.png?{self.date_changes}'
                                for i in range(1, self.len_photos + 1)]
             else:
@@ -117,8 +117,8 @@ class Order(models.Model):
     total = models.PositiveIntegerField()
     goods = models.CharField(max_length=2000)
     status = models.CharField(max_length=10, default="processing")
-    user = models.ForeignKey('Profile', on_delete=models.SET_NULL, null=True)
-    order_spot = models.ForeignKey('OrderSpot', on_delete=models.PROTECT, null=True)
+    user = models.ForeignKey('Profile', on_delete=models.SET_NULL, blank=True, null=True)
+    order_spot = models.ForeignKey('OrderSpot', on_delete=models.PROTECT, blank=True, null=True)
 
     def __repr__(self):
         return '<Order {} {} {}rub>'.format(self.id, self.status, self.total)
@@ -138,7 +138,7 @@ class Order(models.Model):
         if status_req:
             d['status'] = self.status
         if user_req:
-            d['user'] = self.user.to_dict(login_req=True, phone_req=True)
+            d['user'] = self.user.profile.to_dict(username_req=True, phone_req=True)
         if order_spot_req:
             d['order_spot'] = self.order_spot.to_dict()
         return d
@@ -192,50 +192,57 @@ class OrderSpot(models.Model):
 
 class Profile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
-    phone = models.CharField(max_length=12, unique=True)
+    phone = models.CharField(max_length=12, unique=True, blank=True, null=True)
     subscription = models.BooleanField(default=True)
     photo = models.BooleanField(default=False)  # есть ли фото
-    status = models.CharField(max_length=6, default='user')  # user | worker | admin
     basket = models.CharField(max_length=2000, default='')
-    date_created = models.DateField(auto_now_add=True)
-    date_changes = models.DateField(auto_now_add=True)
+    date_changes = models.DateTimeField(auto_now_add=True)
+    token = models.CharField(max_length=TOKEN_LEN, blank=True, null=True)
 
     def __repr__(self):
         return '<UserProfile {} {}>'.format(self.user.id, self.user.username)
 
     def __str__(self):
-        return f'User {self.user.id}'
+        return f'User profile {self.user.id}'
 
-    def to_dict(self, id_req=True, name_req=False, surname_req=False,
-                phone_req=False, email_req=False, login_req=False,
-                photo_req=False, subscr_req=False, basket_req=False, all_req=False):
+    def to_dict(self, id_req=True, first_name_req=False, last_name_req=False,
+                phone_req=False, email_req=False, username_req=True,
+                photo_req=False, subscr_req=False, basket_req=False,
+                token_req=False, all_req=False):
         if all_req:
-            (id_req, name_req, surname_req,
+            (id_req, first_name_req, last_name_req,
              email_req, phone_req, login_req,
-             photo_req, subscr_req, basket_req) = (True for _ in range(9))
+             photo_req, subscr_req, basket_req, token_req) = (True for _ in range(10))
         d = dict()
         if id_req:
             d['id'] = self.user.id
-        if name_req:
-            d['name'] = self.user.first_name
-        if surname_req:
-            d['surname'] = self.user.last_name
+        if first_name_req:
+            d['first_name'] = self.user.first_name
+        if last_name_req:
+            d['last_name'] = self.user.last_name
         if phone_req:
             d['phone'] = self.phone
         if email_req:
             d['email'] = self.user.email
-        if login_req:
-            d['login'] = self.user.username
+        if username_req:
+            d['username'] = self.user.username
         if subscr_req:
             d['subscription'] = self.subscription
         if basket_req:
             d['basket'] = str_to_basket(self.basket)
+        if token_req:
+            d['token'] = self.token
         if photo_req:
             if self.photo:
-                d['photo'] = '/static/profiles/{}.png?{}'.format(self.id, self.date_changes)
+                d['photo'] = to_path('profiles', f'{self.id}.png?{self.date_changes}')
             else:
                 d['photo'] = NO_PROFILE_PHOTO
         return d
+
+    # получить названия полей в таблице
+    def get_all_fields(self=None):
+        return ('phone', 'subscription', 'photo',
+                'basket', 'date_changes', 'tokens')
 
     class Meta:
         verbose_name = "Профиль пользователя"

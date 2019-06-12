@@ -6,7 +6,7 @@ from .models import Category, Product, Order
 from os import listdir, path
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
+from special import *
 
 LOCAL_STATIC = 'MainSite/static'
 
@@ -17,7 +17,7 @@ def main_page(request):
     slides = filter(lambda f: f[0] != '.' and f[:2] != '~$',
                     listdir(path.join(LOCAL_STATIC, 'main_slides')))
     # собираем пути к ним
-    slides = list(map(lambda slide: path.join('static', 'main_slides', slide), slides))
+    slides = list(map(lambda slide: to_path('main_slides', slide), slides))
     # преобразуем в вид (<номер>, <путь>)
     for i in range(len(slides)):
         slides[i] = (i, slides[i])
