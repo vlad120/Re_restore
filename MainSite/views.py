@@ -4,18 +4,14 @@ from django.views.generic import FormView
 from django.contrib.auth.models import User
 from .models import Category, Product, Order
 from os import listdir, path
-from rest_framework.response import Response
-from rest_framework.views import APIView
 from special import *
-
-LOCAL_STATIC = 'MainSite/static'
 
 
 # главная страница
 def main_page(request):
     # находим все слайды в папке (исключая скрытые файлы)
-    slides = filter(lambda f: f[0] != '.' and f[:2] != '~$',
-                    listdir(path.join(LOCAL_STATIC, 'main_slides')))
+    slides = filter(lambda f: f[0] != '.' and f[:2] != '~$', listdir(to_path('main_slides')))
+    slides = list(slides)
     # собираем пути к ним
     slides = list(map(lambda slide: to_path('main_slides', slide), slides))
     # преобразуем в вид (<номер>, <путь>)

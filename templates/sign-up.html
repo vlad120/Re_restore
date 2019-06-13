@@ -1,0 +1,106 @@
+{% extends "Base.html" %}
+
+{% block style %}
+    <style type="text/css">
+        .content {
+            margin-left: 60px;
+        }
+        .base-title {
+            margin-top: 30px;
+            margin-bottom: 20px;
+            color: darkgreen;
+        }
+        .form-fields {
+            width: 300px;
+        }
+        .registration-error {
+            margin-left: 70px;
+            font-size: 14px;
+            color: orangered;
+            margin-bottom: 5px;
+            margin-top: -10px;
+        }
+    </style>
+{% endblock %}
+
+
+{% block content %}
+    <br>
+    <br>
+    <h2 class="content base-title"><b>Регистрация</b></h2>
+    <form method="post">
+        <p class="content">
+            <div class="input-group mb-3 content form-fields">
+                <div class="input-group-prepend">
+                    <span class="input-group-text">#</span>
+                </div>
+                <input type="text" class="form-control" name="name" placeholder="Имя" value="{{ data['last']['registration']['name'] }}">
+            </div>
+            {% if data['errors']['registration']['name'] %}
+                <p class="registration-error">{{ data['errors']['registration']['name'] }}</p>
+            {% endif %}
+        </p>
+        <p class="content">
+            <div class="input-group mb-3 content form-fields">
+                <div class="input-group-prepend">
+                    <span class="input-group-text">§</span>
+                </div>
+                <input type="text" class="form-control" name="surname" placeholder="Фамилия" value="{{ data['last']['registration']['surname'] }}">
+            </div>
+            {% if data['errors']['registration']['surname'] %}
+                <p class="registration-error">{{ data['errors']['registration']['surname'] }}</p>
+            {% endif %}
+        </p>
+        <p class="content">
+            <div class="input-group mb-3 content form-fields">
+                <div class="input-group-prepend">
+                    <span class="input-group-text"><i>N</i></span>
+                </div>
+                <input class="form-control" name="phone" placeholder="Номер телефона" value="{{ data['last']['registration']['phone'] }}">
+            </div>
+            {% if data['errors']['registration']['phone'] %}
+                <p class="registration-error">{{ data['errors']['registration']['phone'] }}</p>
+            {% endif %}
+        </p>
+        <p class="content">
+            <div class="input-group mb-3 content form-fields">
+                <div class="input-group-prepend">
+                    <span class="input-group-text">@</span>
+                </div>
+                <input type="email" class="form-control" name="email" placeholder="E-Mail" value="{{ data['last']['registration']['email'] }}">
+            </div>
+            {% if data['errors']['registration']['email'] %}
+                <p class="registration-error">{{ data['errors']['registration']['email'] }}</p>
+            {% endif %}
+        </p>
+        <p class="content">
+            <div class="input-group mb-3 content form-fields">
+                <div class="input-group-prepend">
+                    <span class="input-group-text">$</span>
+                </div>
+                <input type="text" class="form-control" name="login" placeholder="Логин" value="{{ data['last']['registration']['login'] }}">
+            </div>
+            {% if data['errors']['registration']['login'] %}
+                <p class="registration-error">{{ data['errors']['registration']['login'] }}</p>
+            {% endif %}
+        </p>
+        <p class="content">
+            <div class="input-group mb-3 content form-fields">
+                <div class="input-group-prepend">
+                    <span class="input-group-text">&</span>
+                </div>
+                <input type="password" class="form-control" name="password" placeholder="Пароль" value="{{ data['last']['registration']['password'] }}">
+            </div>
+            {% if data['errors']['registration']['password'] %}
+                <p class="registration-error">{{ data['errors']['registration']['password'] }}</p>
+            {% endif %}
+        </p>
+        <p class="content">
+            <input type="checkbox" id="subscriptionCheck" name="subscription" checked>
+            <label class="form-check-label" for="subscriptionCheck">Подписка на новости по e-mail</label>
+        </p>
+        <p class="content">
+            <button type="submit" class="btn btn-info" name="sign-up">Зарегистрироваться</button>
+        </p>
+    </form>
+{% endblock %}

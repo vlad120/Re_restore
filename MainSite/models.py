@@ -101,7 +101,7 @@ class Product(models.Model):
                 d['photo'] = NO_GOODS_PHOTO
         if photos_req:
             if self.len_photos:
-                folder = to_path('goods', self.id)
+                folder = to_path('goods', str(self.id))
                 d['photos'] = [folder + f'/{i}.png?{self.date_changes}'
                                for i in range(1, self.len_photos + 1)]
             else:
@@ -198,6 +198,8 @@ class Profile(models.Model):
     basket = models.CharField(max_length=2000, default='')
     date_changes = models.DateTimeField(auto_now_add=True)
     token = models.CharField(max_length=TOKEN_LEN, blank=True, null=True)
+    is_users_editor = models.BooleanField(default=False)
+    is_goods_editor = models.BooleanField(default=False)
 
     def __repr__(self):
         return '<UserProfile {} {}>'.format(self.user.id, self.user.username)
@@ -208,11 +210,12 @@ class Profile(models.Model):
     def to_dict(self, id_req=True, first_name_req=False, last_name_req=False,
                 phone_req=False, email_req=False, username_req=True,
                 photo_req=False, subscr_req=False, basket_req=False,
-                token_req=False, all_req=False):
+                token_req=False, status_req=False, all_req=False):
         if all_req:
             (id_req, first_name_req, last_name_req,
              email_req, phone_req, login_req,
-             photo_req, subscr_req, basket_req, token_req) = (True for _ in range(10))
+             photo_req, subscr_req, basket_req,
+             token_req, status_req) = (True for _ in range(11))
         d = dict()
         if id_req:
             d['id'] = self.user.id
@@ -232,6 +235,10 @@ class Profile(models.Model):
             d['basket'] = str_to_basket(self.basket)
         if token_req:
             d['token'] = self.token
+        if status_req:
+            d['status'] = {'staff': self.user.is_staff,
+                           'goods_editor': self.is_goods_editor,
+                           'users_editor': self.is_users_editor}
         if photo_req:
             if self.photo:
                 d['photo'] = to_path('profiles', f'{self.id}.png?{self.date_changes}')

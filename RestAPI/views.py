@@ -1,10 +1,6 @@
 from rest_framework.views import APIView
 from django.contrib.auth import authenticate
-from django.contrib.auth.models import User
-from MainSite.models import Category, Product, Order, Profile
-from django.contrib.auth.hashers import check_password, make_password
-from special import *
-from datetime import datetime
+from .db_models_funcs import *
 
 
 # оптимизация переданных в запросе параметров {'param': ['e']} -> {'param': 'e'};
@@ -31,6 +27,21 @@ def check_token(params):
         return False, "token is wrong"
 
 
+def find_user(params):
+    keys = ['id', 'username', 'email']
+    for k in keys:
+        if k in params:
+            params = {k: params[k]}
+            keys = None  # индикатор, что нужный ключ нашёлся
+            break
+    if keys:
+        return False, f"{'/'.join(keys)} missed"
+    try:
+        return True, User.objects.get(is_superuser=False, **params)
+    except User.DoesNotExist:
+        return False, f"user {k}={params[k]} does not exist"
+
+
 class AuthorizationAPI(APIView):
     """ API для получения токена / регистрации пользователей. """
     def get(self, request, req):
@@ -53,12 +64,11 @@ class AuthorizationAPI(APIView):
                 if user.is_superuser:
                     return make_success(False, "Access Error")
                 user.profile.token = make_token()
-                user.profile.date_changes = datetime.now()
-                user.save()
+                save_with_date(user.profile)
                 return make_success(token=user.profile.token)
 
         except Exception as e:
-            logger.error(f"AuthorizationAPI (r: {req}) error: {e}")
+            logger.error(f"AuthorizationAPI (get: {req}) error: {e}")
             return make_success(False, "Server Error")
 
 
@@ -69,11 +79,11 @@ class UserAPI(APIView):
             return make_success(False, "Bad request")
         try:
             params = get_params(request)
-            check = check_token(params)  # корректность токена
-            if check[0]:
-                token_user = check[1]
+            ok, result = check_token(params)  # корректность токена
+            if ok:
+                token_user = result
             else:
-                return make_success(False, check[1])
+                return make_success(False, result)
 
             # получение своих данных
             if req == 'me':
@@ -87,18 +97,10 @@ class UserAPI(APIView):
 
             # получение полных данных конкретного пользователя
             if req == 'one':
-                keys = ['id', 'username', 'email']
-                for k in keys:
-                    if k in params:
-                        params = {k: params[k]}
-                        keys = None  # индикатор, что нужный ключ нашёлся
-                        break
-                if keys:
-                    return make_success(False, f"{'/'.join(keys)} missed")
-                try:
-                    user = User.objects.get(is_superuser=False, **params)
-                except User.DoesNotExist:
-                    return make_success(False, f"user {k}={params[k]} does not exist")
+                search = find_user(params)
+                if not search[0]:
+                    return make_success(False, search[1])
+                user = search[1]
 
                 user_data = user.profile.to_dict(all_req=True)
                 user_data['photo'] = make_url(user_data['photo'])  # абсолютный путь
@@ -151,7 +153,7 @@ class UserAPI(APIView):
                     users=[u.profile.to_dict() for u in User.objects.filter(is_superuser=False).all()]
                 )
         except Exception as e:
-            logger.error(f"UserAPI (r: {req}) error: {e}")
+            logger.error(f"UserAPI (get: {req}) error: {e}")
             return make_success(False, "Server Error")
 
     def put(self, request, req):
@@ -159,128 +161,31 @@ class UserAPI(APIView):
             return make_success(False, "Bad request")
         try:
             params = get_params(request)
-            check = check_token(params)  # корректность токена
-            if check[0]:
-                token_user = check[1]
+            ok, result = check_token(params)  # корректность токена
+            if ok:
+                token_user = result
             else:
-                return make_success(False, check[1])
+                return make_success(False, result)
 
-            data = request.data
+            if req == 'me':
+                user = token_user
+            elif req == 'one':
+                if not token_user.profile.is_users_editor:
+                    return make_success(False, "Access Error")
+                search = find_user(params)
+                if not search[0]:
+                    return make_success(False, search[1])
+                user = search[1]
 
-            errors = {'first_name': None,
-                      'last_name': None,
-                      'phone': None,
-                      'email': None,
-                      'username': None,
-                      'new_password': None,
-                      'check_password': None,
-                      'photo': None}
-            try:
-                user_id = int(arg)
-                parser = reqparse.RequestParser()
-                for arg in ('name', 'surname', 'email', 'check_password', 'new_password', 'subscription', 'photo'):
-                    parser.add_argument(arg)
-                args = parser.parse_args()
-                if request_data:
-                    args.update(request_data)
-
-                user = UserModel.query.filter_by(id=user_id).first()
-                if not user:
-                    return make_success(False, message="User {} doesn't exist".format(user_id))
-
-                # проверка на собственника учетной записи / админа
-                if not (verify_curr_admin(a) or (int(a['id']) == user_id and verify_authorization(a=a))):
-                    return make_success(False, message="Access Error")
-
-                # редактирование фото
-                if 'photo' in args and args['photo']:
-                    photo = None
-                    try:
-                        ext = args['photo'].filename.split('.')[-1]
-                        if ext.lower() in ['png', 'jpg', 'jpeg']:
-                            photo = 'static/profiles/{}.png'.format(user.id)
-                            args['photo'].save(photo)
-                            user.photo = '1'
-                            user.date_changes = curr_time()
-                            db.session.commit()
-                        else:
-                            raise TypeError
-                    except Exception as e:
-                        logging.error("Save photo (change user info) Error:\t{}".format(e))
-                        if photo and path.exists(photo):
-                            remove(photo)
-                            errors['photo'] = "Ошибка при загрузке фото."
-
-                # проверка на ввод подтверждающего пароля
-                # для возможности дальнейшего редактирования личных данных
-                if 'check_password' not in args or not args['check_password']:
-                    if 'photo' in args and args['photo']:  # если редактировалось только фото
-                        return make_success(errors=errors)
-                    errors['check_password'] = "Введите старый пароль для подтверждения."
-                    return make_success(False, errors=errors)
-
-                # проверка подтверждающего пароля
-                if not check_password_hash(user.password, args['check_password']):
-                    errors['check_password'] = "Старый пароль введен неверно."
-                    return make_success(False, errors=errors)
-
-                # обработка поступивших данных
-                if args['name'] and args['name'] != user.name:
-                    if len(args['name']) > 80:
-                        errors['name'] = "Слишком длинное имя (> 80 символов)."
-                    else:
-                        user.name = args['name'].strip()
-                if args['surname'] and args['surname'] != user.surname:
-                    if len(args['surname']) > 80:
-                        errors['surname'] = "Слишком длинная фамилия (> 80 символов)."
-                    else:
-                        user.surname = args['surname'].strip()
-
-                if args['phone'] and args['phone'] != user.phone:
-                    phone = str(args['phone']).strip()
-                    plus = phone[0] == '+'
-                    phone = phone.strip('+')
-                    if phone.isdigit() and (phone[0] == '7' or (phone[0] in '89' and not plus)):
-                        if phone[0] in '78' and len(phone) == 11:
-                            phone = '+7' + phone[1:]
-                        elif len(phone) == 10 and phone[0] == '9':
-                            phone = '+7' + phone
-                        else:
-                            errors['phone'] = "Некорректный номер телефона."
-                    else:
-                        errors['phone'] = "Некорректный формат номера телефона."
-                    # занятость номера телефона
-                    if UserModel.query.filter_by(phone=phone).first():
-                        errors['phone'] = "Номер телефона занят. Введите другой."
-                    # при отсутствии ошибок
-                    elif not errors['phone']:
-                        user.phone = phone
-
-                if args['email'] and args['email'] != user.email:
-                    if len(args['email']) > 120:
-                        errors['email'] = "Слишком длинный e-mail (> 120 символов)."
-                    else:
-                        user.email = args['email'].strip()
-                if args['new_password']:
-                    if len(args['new_password']) > 100:
-                        errors['new_password'] = "Слишком длинный пароль (> 100 символов)."
-                    elif len(args['new_password']) < 3:
-                        errors['new_password'] = "Слишком простой пароль (< 3 символов)."
-                    else:
-                        user.password = generate_password_hash(args['new_password'].strip())
-
-                user.subscription = 1 if args['subscription'] else 0  # подписка на новости
-
-                db.session.commit()
-                return make_success(errors=errors)
-            except Exception as e:
-                logging.error("Change user info Error:\t{}".format(e))
-                return make_success(False, 'Server error')
-
+            ok, message, changed, errors = change_user_info_api(user, params, request.data)
+            # при успехе
+            if ok:
+                return make_success(message=message, changed=changed, errors=errors)
+            # в противном случае
+            return make_success(False, message=message, changed=changed, errors=errors)
         except Exception as e:
-            logger.error(f"AuthorizationAPI (r: {req}) error: {e}")
+            logger.error(f"UserAPI (put: {req}) error: {e}")
             return make_success(False, "Server Error")
-        return make_success(False, "Bad request")
 
     # def delete(self, r, a=None, params=dict()):
     #     params = params if params else dict(request.args)

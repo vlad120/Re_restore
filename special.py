@@ -1,12 +1,17 @@
 from django.http import JsonResponse
+from datetime import datetime
 import os
 import logging
+from PIL import Image
+
 
 logger = logging.getLogger(__name__)
 
 SITE_URL = 'https://new-store.ru/'
 
 TOKEN_LEN = 70
+LIMIT_PROFILE_PHOTO_SIZE = 10  # Мб, предельный размер загружаемого фото
+MAX_PROFILE_PHOTO_SIZE = 1  # Мб, максимальный размер для хранения фото
 
 
 # получение корректного пути
@@ -54,4 +59,54 @@ def make_token():
 def make_url(path: str):
     return SITE_URL + path.strip('/')
 
+
+# сохранить объект вместе с датой изменения
+def save_with_date(obj):
+    try:
+        obj.date_changes = datetime.now()
+        obj.save()
+        return True
+    except Exception as e:
+        logger.error(f"Save {obj} with date_changes error: {e}")
+        return False
+
+
+# сохранить фото из request.data
+def save_photo(file, photo_path):
+    with open(photo_path, 'wb+') as f:
+        size = 0  # размер изображения в Мб
+        for chunk in file.chunks():
+            f.write(chunk)  # запись фото
+            size += len(chunk) / 1024 / 1024
+            # при превышении максимального размера загружаемого файла
+            if size > LIMIT_PROFILE_PHOTO_SIZE:
+                raise SizeError
+        process_profile_photo(photo_path, size)  # обработка фото
+
+
+# сжать фото до 1Мб и обрезать в квадрат
+def process_profile_photo(photo_path, file_size):
+    im = Image.open(photo_path)
+    w, h = (int(val // file_size) for val in im.size)
+    diff = abs(w - h) // 2
+    # уменьшаем размер (по надобности)
+    if file_size > MAX_PROFILE_PHOTO_SIZE:
+        im = im.resize((w, h), Image.ANTIALIAS)
+    # обрезаем до квадрата
+    if w != h:
+        im = im.crop((diff, 0, w - diff, h) if w > h else (0, diff, w, h - diff))
+    # до полного квадрата
+    w, h = im.size
+    if w != h:
+        diff = abs(w - h)
+        im = im.crop((0, 0, w - diff, h) if w > h else (0, 0, w, h - diff))
+    im.save(photo_path, 'PNG')
+
+
+class SizeError(Exception):
+    pass
+
+
+class ExtensionError(Exception):
+    pass
 

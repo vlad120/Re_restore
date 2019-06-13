@@ -1,0 +1,86 @@
+﻿{% extends "Base.html" %}
+
+{% block style %}
+    <style type="text/css">
+        .content { margin-left: 50px; }
+        .card {
+            margin-top: 20px;
+            margin-bottom: 5px;
+        }
+        .one-line { display: inline-block; }
+        .carousel { margin-top: 10px; }
+        .card-img-top {
+            height: 180px;
+            width: auto;
+            margin-top: 20px;
+        }
+        .goods-title { color: green; }
+        .goods-title:hover {
+            text-decoration: none;
+            color: teal;
+        }
+        .goods-price {
+            font-size: 22px;
+            font-style: italic;
+            color: seagreen;
+            margin-bottom: 5px;
+            float: right;
+            margin-left: 100px;
+            margin-right: 40px;
+        }
+    </style>
+{% endblock %}
+
+
+{% block content %}
+    <div id="carouselIndicators" class="carousel slide" data-ride="carousel" style="margin-top: 0;">
+      <ol class="carousel-indicators">
+          {% for n, _ in slides %}
+              <li data-target="#carouselIndicators" data-slide-to="{{ n }}" {% if n == 0 %}class="active"{% endif %}></li>
+          {% endfor %}
+      </ol>
+      <div class="carousel-inner">
+          {% for n, slide_link in slides %}
+              <div class="carousel-item {% if n == 0 %}active{% endif %}">
+                  <img src="{{ slide_link }}" alt="Упс..." class="d-block w-100">
+              </div>
+              {{ slides.n }}
+          {% endfor %}
+      </div>
+      <a class="carousel-control-prev" href="#carouselIndicators" role="button" data-slide="prev">
+        <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+        <span class="sr-only">Previous</span>
+      </a>
+      <a class="carousel-control-next" href="#carouselIndicators" role="button" data-slide="next">
+        <span class="carousel-control-next-icon" aria-hidden="true"></span>
+        <span class="sr-only">Next</span>
+      </a>
+    </div>
+    <br>
+    <h4 class="content">Интересные товары</h4>
+    <div style="min-width: 750px;">
+        {% for item in data.goods %}
+            <div class="card content one-line" style="width: 300px;">
+                <p style="text-align: center; margin-bottom: 0;">
+                    <a href="{{ item.full_link }}">
+                        <img src="{{ item.photo }}" class="card-img-top" alt="Упс...">
+                    </a>
+                </p>
+                <div class="card-body">
+                    <h5 class="card-title"><a href="{{ item.full_link }}" class="goods-title">{{ item.name }}</a></h5>
+                    <p class="card-text" style="margin-bottom: 5px;">{{ item.card_description }}</p>
+                    <p class="card-text goods-price"><b>{{ item.price }}₽</b></p>
+                    <a href="{{ item.full_link }}" target="_blank" class="btn btn-info btn-buy one-line" style="margin-right: 10px;">Подробнее</a>
+                    {% if item.id in data.basket %}
+                        <button type="button" class="btn btn-success" disabled>В корзине</button>
+                    {% else %}
+                        <form method="post"class="one-line">
+                            <input type="hidden" name="addToBasketGoodsID" value="{{ item.id }}">
+                            <button type="submit" class="btn btn-outline-info" name="addToBasket" {% if not authorization.id or authorization.admin_authorization %}disabled{% endif %}>В корзину</button>
+                        </form>
+                    {% endif %}
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+{% endblock %}
