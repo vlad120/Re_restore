@@ -139,6 +139,8 @@ def change_user_info_api(user, params, data):
             except ExtensionError:
                 write_error(f"Incorrect extension {ext}", *args)
             except SizeError:
+                if os.path.exists(photo_path):
+                    os.remove(photo_path)  # удаляем часть, что успела записаться
                 write_error("Size > 10Mb", *args)
             except Exception as e:
                 logger.error(f"Save photo (change user info <api>) error: {e}")

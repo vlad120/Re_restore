@@ -22,7 +22,9 @@ def check_token(params):
         return False, "token missed"
     try:
         profile = Profile.objects.get(token=token)
-        return True, profile.user
+        if profile.user.is_active:
+            return True, profile.user
+        return False, "User was deleted"
     except Profile.DoesNotExist:
         return False, "token is wrong"
 
@@ -63,6 +65,8 @@ class AuthorizationAPI(APIView):
                 # суперпользователь не может получить токен
                 if user.is_superuser:
                     return make_success(False, "Access Error")
+                if not user.is_active:
+                    return make_success(False, "User was deleted")
                 user.profile.token = make_token()
                 save_with_date(user.profile)
                 return make_success(token=user.profile.token)
@@ -73,7 +77,7 @@ class AuthorizationAPI(APIView):
 
 
 class UserAPI(APIView):
-    """ API для получения / редактирования / удаления данных пользователей. """
+    """ API для получения / редактирования данных пользователей. """
     def get(self, request, req):
         if req not in {'me', 'one', 'params', 'all'}:
             return make_success(False, "Bad request")
@@ -170,7 +174,8 @@ class UserAPI(APIView):
             if req == 'me':
                 user = token_user
             elif req == 'one':
-                if not token_user.profile.is_users_editor:
+                # безопасность
+                if not (token_user.is_staff and token_user.profile.is_users_editor):
                     return make_success(False, "Access Error")
                 search = find_user(params)
                 if not search[0]:
@@ -187,36 +192,37 @@ class UserAPI(APIView):
             logger.error(f"UserAPI (put: {req}) error: {e}")
             return make_success(False, "Server Error")
 
-    # def delete(self, r, a=None, params=dict()):
-    #     params = params if params else dict(request.args)
-    #     optimize_params(params)
-    #     a = a if a else get_authorization(params=params)
-    #
-    #     arg = str(r).lower().strip(' /')
-    #     if arg.isdigit():
-    #         user_id = int(arg)
-    #         # проверка на собственника учетной записи / админа
-    #         if not (verify_curr_admin(a) or (int(a['id']) == user_id and verify_authorization(a=a))):
-    #             return make_success(False, message="Access Error")
-    #         try:
-    #             user = UserModel.query.filter_by(id=user_id).first()
-    #             if user:
-    #                 # удаляем фото профиля
-    #                 photo = 'static/profiles/{}.png'.format(arg)
-    #                 if path.exists(photo):
-    #                     remove(photo)
-    #                 # удаляем все заказы пользователя
-    #                 for order in OrderModel.query.filter_by(user_id=user_id).all():
-    #                     db.session.delete(order)
-    #                 db.session.delete(user)
-    #                 db.session.commit()
-    #                 return make_success()
-    #             return make_success(False, message="User {} doesn't exist".format(user_id))
-    #         except Exception as e:
-    #             logging.error("User delete Error:\t{}".format(e))
-    #             return make_success(False, message="Server Error")
-    #
-    #     return make_success(False, message='Bad request')
+    def delete(self, request, req):
+        if req not in {'me', 'one'}:
+            return make_success(False, "Bad request")
+        try:
+            params = get_params(request)
+            ok, result = check_token(params)  # корректность токена
+            if ok:
+                token_user = result
+            else:
+                return make_success(False, result)
 
-
+            if req == 'me':
+                user = token_user
+            elif req == 'one':
+                # безопасность
+                if not (token_user.is_staff and token_user.profile.is_users_editor):
+                    return make_success(False, "Access Error")
+                search = find_user(params)
+                if not search[0]:
+                    return make_success(False, search[1])
+                user = search[1]
+            if not user.is_active:
+                return make_success(False, "User has already been deleted")
+            # защита персонала и суперпользователей
+            if user.is_staff or user.is_superuser:
+                return make_success(False, "Access Error")
+            # дезактивируем учетную запись
+            user.is_active = False
+            save_with_date(user)
+            return make_success()
+        except Exception as e:
+            logger.error(f"UserAPI (delete: {req}) error: {e}")
+            return make_success(False, "Server Error")
 
