@@ -53,6 +53,8 @@ class Product(models.Model):
     characteristics = models.CharField(max_length=7000)
     price = models.PositiveIntegerField()
     count = models.PositiveIntegerField()
+    bought = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
     category = models.ForeignKey(Category, on_delete=models.PROTECT)
     len_photos = models.PositiveSmallIntegerField(default=0)  # количество фото
     date_added = models.DateField(auto_now_add=True)
@@ -66,13 +68,13 @@ class Product(models.Model):
 
     def to_dict(self, id_req=True, name_req=True, description_req=False,
                 short_description_req=False, characteristics_req=False,
-                price_req=True, count_req=True, category_name_req=True,
-                category_req=False, full_link_req=False,
-                photo_req=False, photos_req=False, all_req=False):
+                price_req=True, count_req=True, bought_req=False,
+                active_req=False, category_name_req=True, category_req=False,
+                full_link_req=False, photo_req=False, photos_req=False, all_req=False):
         if all_req:
             (id_req, name_req, description_req, short_description_req, characteristics_req,
-             price_req, count_req, category_name_req, category_req, full_link_req,
-             photo_req, photos_req) = (True for _ in range(12))
+             price_req, count_req, bought_req, active_req, category_name_req, category_req,
+             full_link_req, photo_req, photos_req) = (True for _ in range(14))
         d = dict()
         if id_req:
             d['id'] = self.id
@@ -88,6 +90,10 @@ class Product(models.Model):
             d['price'] = self.price
         if count_req:
             d['count'] = self.count
+        if bought_req:
+            d['bought'] = self.bought
+        if active_req:
+            d['is_active'] = self.is_active
         if category_name_req:
             d['category_name'] = self.category.name
         if category_req:
@@ -192,9 +198,9 @@ class OrderSpot(models.Model):
 
 class Profile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
-    phone = models.CharField(max_length=12, unique=True, blank=True, null=True)
+    phone = models.CharField(max_length=10, unique=True, blank=True, null=True)
     subscription = models.BooleanField(default=True)
-    photo = models.BooleanField(default=False)  # есть ли фото
+    has_photo = models.BooleanField(default=False)  # есть ли фото
     basket = models.CharField(max_length=2000, default='')
     date_changes = models.DateTimeField(auto_now_add=True)
     token = models.CharField(max_length=TOKEN_LEN, blank=True, null=True)
@@ -210,12 +216,13 @@ class Profile(models.Model):
     def to_dict(self, id_req=True, first_name_req=False, last_name_req=False,
                 phone_req=False, email_req=False, username_req=True,
                 photo_req=False, subscr_req=False, basket_req=False,
-                token_req=False, status_req=False, all_req=False):
+                token_req=False, status_req=False, last_login_req=False,
+                all_req=False):
         if all_req:
             (id_req, first_name_req, last_name_req,
              email_req, phone_req, login_req,
              photo_req, subscr_req, basket_req,
-             token_req, status_req) = (True for _ in range(11))
+             token_req, status_req, last_login_req) = (True for _ in range(12))
         d = dict()
         if id_req:
             d['id'] = self.user.id
@@ -224,7 +231,7 @@ class Profile(models.Model):
         if last_name_req:
             d['last_name'] = self.user.last_name
         if phone_req:
-            d['phone'] = self.phone
+            d['phone'] = '+7' + self.phone
         if email_req:
             d['email'] = self.user.email
         if username_req:
@@ -239,17 +246,14 @@ class Profile(models.Model):
             d['status'] = {'staff': self.user.is_staff,
                            'goods_editor': self.is_goods_editor,
                            'users_editor': self.is_users_editor}
+        if last_login_req:
+            d['last_login'] = str(self.user.last_login)
         if photo_req:
-            if self.photo:
+            if self.has_photo:
                 d['photo'] = to_path('profiles', f'{self.id}.png?{self.date_changes}')
             else:
                 d['photo'] = NO_PROFILE_PHOTO
         return d
-
-    # получить названия полей в таблице
-    def get_all_fields(self=None):
-        return ('phone', 'subscription', 'photo',
-                'basket', 'date_changes', 'tokens')
 
     class Meta:
         verbose_name = "Профиль пользователя"

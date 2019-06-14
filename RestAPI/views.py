@@ -17,11 +17,10 @@ def get_params(request, strict=True):
 
 
 def check_token(params):
-    token = params.get('token')
-    if not token:
+    if not params.get('token'):
         return False, "token missed"
     try:
-        profile = Profile.objects.get(token=token)
+        profile = Profile.objects.get(token=params.pop('token'))
         if profile.user.is_active:
             return True, profile.user
         return False, "User was deleted"
@@ -30,7 +29,8 @@ def check_token(params):
 
 
 def find_user(params):
-    keys = ['id', 'username', 'email']
+    keys = ['id', 'username', 'email', 'phone', 'token']
+    k = None
     for k in keys:
         if k in params:
             params = {k: params[k]}
@@ -39,9 +39,31 @@ def find_user(params):
     if keys:
         return False, f"{'/'.join(keys)} missed"
     try:
+        if k in {'phone', 'token'}:
+            if k == 'phone':
+                params[k] = optimize_phone(params[k])
+            profile = Profile.objects.get(**params)
+            if profile.user.is_superuser:
+                raise User.DoesNotExist
+            return True, profile.user
         return True, User.objects.get(is_superuser=False, **params)
     except User.DoesNotExist:
-        return False, f"user {k}={params[k]} does not exist"
+        return False, f"User {k}={params[k]} does not exist"
+
+
+def find_product(params):
+    keys = ['id', 'name']
+    for k in keys:
+        if k in params:
+            params = {k: params[k]}
+            keys = None  # индикатор, что нужный ключ нашёлся
+            break
+    if keys:
+        return False, f"{'/ '.join(keys)} missed"
+    try:
+        return True, Product.objects.get(**params)
+    except Product.DoesNotExist:
+        return False, f"Product {k}='{params[k]}' does not exist"
 
 
 class AuthorizationAPI(APIView):
@@ -79,7 +101,7 @@ class AuthorizationAPI(APIView):
 class UserAPI(APIView):
     """ API для получения / редактирования данных пользователей. """
     def get(self, request, req):
-        if req not in {'me', 'one', 'params', 'all'}:
+        if req not in {'me', 'one', 'all', 'params'}:
             return make_success(False, "Bad request")
         try:
             params = get_params(request)
@@ -110,52 +132,21 @@ class UserAPI(APIView):
                 user_data['photo'] = make_url(user_data['photo'])  # абсолютный путь
                 return make_success(user=user_data)
 
-            # получение списка пользователей с заданными параметрами
-            if req == 'params':
-                params.pop('token')  # оставляем только параметры для поиска
-                if not params:
-                    return make_success(False, f"Parameters missed")
-                # отделяем параметры для профиля пользователя в  profile_params
-                profile_fields = Profile.get_all_fields()
-                profile_params = {}
-                for p in params:
-                    if p in profile_fields:
-                        profile_params[p] = params[p]
-                for p in profile_params:
-                    params.pop(p)  # оставляем в params только параметры для пользователя
-                try:
-                    users_data1 = set(map(lambda u: u.profile,  # преобразование в профиль
-                                          User.objects.filter(is_superuser=False, **params).all()))\
-                        if params else None
-                    users_data2 = set(Profile.objects.filter(is_superuser=False, **profile_params).all())\
-                        if profile_params else None
-
-                    # собираем результаты
-                    if params and profile_params:
-                        users_data = users_data1 & users_data2
-                    else:
-                        users_data = users_data1 if params else users_data2
-                    # преобразуем в данные
-                    users_data = list(map(lambda p: p.to_dict(), users_data))
-
-                except Exception as e:  # FieldError
-                    print(e)
-                    return make_success(False, "Incorrect params")
-
-                if users_data:
-                    message = "Ok"
-                else:
-                    # делаем красивое сообщение
-                    params.update(profile_params)
-                    params = '; '.join([f'{p}={params[p]}' for p in params])
-                    message = f"users with params {params} do not exist"
-                return make_success(message=message, users=users_data)
-
-            # получение кратких данных всех пользователей
+            # получение кратких/полных данных всех пользователей
             if req == 'all':
                 return make_success(
-                    users=[u.profile.to_dict() for u in User.objects.filter(is_superuser=False).all()]
+                    users=[u.profile.to_dict(all_req=params.get('full'))
+                           for u in User.objects.filter(is_superuser=False).all()]
                 )
+
+            # поиск пользователей по параметрам
+            if req == 'params':
+                if not params:
+                    return make_success(False, f"Parameters missed")
+
+                ok, message, users_data = find_users_with_params_api(params)
+                return make_success(ok, message, users=users_data)
+
         except Exception as e:
             logger.error(f"UserAPI (get: {req}) error: {e}")
             return make_success(False, "Server Error")
@@ -181,13 +172,13 @@ class UserAPI(APIView):
                 if not search[0]:
                     return make_success(False, search[1])
                 user = search[1]
+                # защита персонала и суперпользователей от изменения их данных
+                if user.is_staff or user.is_superuser:
+                    return make_success(False, "Access Error")
 
             ok, message, changed, errors = change_user_info_api(user, params, request.data)
-            # при успехе
-            if ok:
-                return make_success(message=message, changed=changed, errors=errors)
-            # в противном случае
-            return make_success(False, message=message, changed=changed, errors=errors)
+            return make_success(ok, message, changed=changed, errors=errors)
+
         except Exception as e:
             logger.error(f"UserAPI (put: {req}) error: {e}")
             return make_success(False, "Server Error")
@@ -224,5 +215,36 @@ class UserAPI(APIView):
             return make_success()
         except Exception as e:
             logger.error(f"UserAPI (delete: {req}) error: {e}")
+            return make_success(False, "Server Error")
+
+
+class ProductAPI(APIView):
+    """ API для получения данных о товаре,
+        размещения / редактирования / удаления товаров. """
+    def get(self, request, req):
+        if req not in {'one', 'all', 'params'}:
+            return make_success(False, "Bad request")
+        try:
+            pass
+        except Exception as e:
+            logger.error(f"ProductAPI (get: {req}) error: {e}")
+            return make_success(False, "Server Error")
+
+    def put(self, request, req):
+        if req not in {'one', 'params'}:
+            return make_success(False, "Bad request")
+        try:
+            pass
+        except Exception as e:
+            logger.error(f"ProductAPI (put: {req}) error: {e}")
+            return make_success(False, "Server Error")
+
+    def delete(self, request, req):
+        if req not in {'one', 'params'}:
+            return make_success(False, "Bad request")
+        try:
+            pass
+        except Exception as e:
+            logger.error(f"ProductAPI (delete: {req}) error: {e}")
             return make_success(False, "Server Error")
 

@@ -13,6 +13,14 @@ TOKEN_LEN = 70
 LIMIT_PROFILE_PHOTO_SIZE = 10  # Мб, предельный размер загружаемого фото
 MAX_PROFILE_PHOTO_SIZE = 1  # Мб, максимальный размер для хранения фото
 
+# методы сортировки
+ID_SORT = "ID"
+DATA_SORT = "DATA"
+NAME_SORT = "NAME"
+PRICE_SORT = "PRICE"
+POPULAR_SORT = "POPULAR"
+NEW_SORT = "NEW"
+
 
 # получение корректного пути
 def to_path(*args, static=True):
@@ -101,6 +109,31 @@ def process_profile_photo(photo_path, file_size):
         diff = abs(w - h)
         im = im.crop((0, 0, w - diff, h) if w > h else (0, 0, w, h - diff))
     im.save(photo_path, 'PNG')
+
+
+# получить ключ для сортировки найденных пользователей
+def get_users_sort(sorting):
+    if sorting == ID_SORT:
+        return lambda profile: profile.user.id
+    if sorting == NEW_SORT:
+        return lambda profile: profile.user.date_joined
+    if sorting == NAME_SORT:
+        return lambda profile: (profile.user.first_name, profile.user.last_name)
+    return lambda profile: profile.user.id  # по умолчанию
+
+
+def optimize_phone(phone):
+    return phone[phone.index('9'):] if '9' in phone else phone
+
+
+def get_bool(val):
+    a = val is True
+    b = type(val) is str and val.lower() in {'true', 't', 'y', '+'}
+    c = type(val) is str and val.isdigit() and int(val) > 0
+    d = type(val) is int and val > 0
+    if a or b or c or d:
+        return True
+    return False
 
 
 class SizeError(Exception):

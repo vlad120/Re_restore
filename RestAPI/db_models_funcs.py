@@ -108,12 +108,7 @@ def change_user_info_api(user, params, data):
                 write_change(*args)
 
     def ch_subscription(val, *args):
-        if val.lower() in {'true', 't', '+'}:
-            val = True
-        elif val.lower() in {'false', 'f', '-'}:
-            val = False
-        else:
-            write_error("Incorrect value", *args)
+        val = get_bool(val)
         if val == user.profile.subscription:
             write_error("Nothing to change", *args)
         else:
@@ -134,7 +129,7 @@ def change_user_info_api(user, params, data):
                 if ext.lower() not in ['png', 'jpg', 'jpeg']:
                     raise ExtensionError
                 save_photo(photo_file, photo_path)
-                user.photo = True
+                user.has_photo = True
                 write_change(*args)
             except ExtensionError:
                 write_error(f"Incorrect extension {ext}", *args)
@@ -181,3 +176,69 @@ def change_user_info_api(user, params, data):
     except Exception as e:
         logger.error(f"Change user info <api> error: {e}")
         return False, 'Server Error, changes may be canceled', changed, errors
+
+
+# поиск пользователей по параметрам
+def find_users_with_params_api(params):
+    # все возможные параметры для пользователя и его профиля
+    user_params = {
+        'id', 'username', 'first_name',
+        'last_name', 'email', 'is_active'
+    }
+    profile_params = {
+        'phone', 'subscription', 'has_photo'
+        'is_users_editor', 'is_goods_editor'
+    }
+
+    n_users = params.pop('n', 5)  # сколько выдать пользователей
+    full_req = get_bool(params.pop('full', False))  # подробная информация о каждом
+
+    sorting = get_users_sort(params.pop('sort', ID_SORT))  # ключ сортировки
+    reverse_sorting = get_bool(params.pop('reverse_sort', False))  # обратная сортировка
+
+    params_keys = {key for key in params}
+
+    # находим пересечения переданных параметров со всеми возможными
+    user_params = dict([(p, params.pop(p)) for p in user_params & params_keys])
+    profile_params = dict([(p, params.pop(p)) for p in profile_params & params_keys])
+
+    # при отсутствии совпадений
+    if not (user_params or profile_params):
+        return False, "Incorrect params", []
+
+    # оптимизация номера телефона
+    phone = profile_params.get('phone')
+    if phone:
+        profile_params['phone'] = optimize_phone(str(phone))
+
+    # осуществляем поиск по переданным параметрам
+    users_data = set(
+        map(lambda u: u.profile,  # преобразование в профиль
+            User.objects.filter(is_superuser=False, **user_params).all())
+    )
+    profiles_data = set(
+        Profile.objects.filter(**profile_params).all()
+    )
+
+    # собираем результаты
+    if user_params and profile_params:
+        result = users_data & profiles_data
+    else:
+        result = users_data if user_params else profiles_data
+
+    # убираем суперпользователей (из profiles_data)
+    result = filter(lambda profile: not profile.user.is_superuser, result)
+    # сортируем и обрезаем до n_users
+    result = list(sorted(result, key=sorting, reverse=reverse_sorting))[:n_users]
+    # преобразуем полные/краткие (full_req) данные в словари
+    result = list(map(lambda r: r.to_dict(all_req=full_req), result))
+
+    if result:
+        return True, "Ok", result
+    else:
+        # делаем красивое сообщение о том, что ничего не найдено
+        user_params.update(profile_params)
+        user_params = '; '.join([f'{p}={user_params[p]}' for p in user_params])
+        message = f"Users with params '{user_params}' do not exist"
+        return True, message, []
+
