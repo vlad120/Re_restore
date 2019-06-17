@@ -1,7 +1,5 @@
-from django.contrib.auth.models import User
-from MainSite.models import Category, Product, Order, Profile
 from django.contrib.auth.hashers import check_password, make_password
-from special import *
+from .special import *
 
 SYMBOLS = {i for i in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ!@#%*"}
 
@@ -12,7 +10,7 @@ def write_error(err, field, changed, errors):
     errors[field] = err
 
 
-# оформить запись об успешном выполнении
+# оформить запись об успешном выполнении в changed
 def write_change(field, changed, errors):
     changed[field] = True
     if field in errors:
@@ -107,12 +105,12 @@ def change_user_info_api(user, params, data):
                 user.set_password(val)
                 write_change(*args)
 
-    def ch_subscription(val, *args):
+    def ch_email_subscription(val, *args):
         val = get_bool(val)
-        if val == user.profile.subscription:
+        if val == user.profile.email_subscription:
             write_error("Nothing to change", *args)
         else:
-            user.profile.subscription = val
+            user.profile.email_subscription = val
             write_change(*args)
 
     def ch_photo(val, *args):
@@ -152,7 +150,8 @@ def change_user_info_api(user, params, data):
         'email_change': lambda val: ch_email(val, 'email_change', changed, errors),
         'username_change': lambda val: ch_username(val, 'username_change', changed, errors),
         'password_change': lambda val: ch_password(val, 'password_change', changed, errors),
-        'subscription_change': lambda val: ch_subscription(val, 'subscription_change', changed, errors),
+        'email_subscription_change': lambda val: ch_email_subscription(val, 'email_subscription_change',
+                                                                       changed, errors),
         'photo_change': lambda val: ch_photo(val, 'photo_change', changed, errors)
     }
     try:
@@ -182,11 +181,11 @@ def change_user_info_api(user, params, data):
 def find_users_with_params_api(params):
     # все возможные параметры для пользователя и его профиля
     user_params = {
-        'id', 'username', 'first_name',
-        'last_name', 'email', 'is_active'
+        'id', 'is_active',
+        'first_name', 'last_name'
     }
     profile_params = {
-        'phone', 'subscription', 'has_photo'
+        'email_subscription', 'has_photo'
         'is_users_editor', 'is_goods_editor'
     }
 
@@ -198,40 +197,52 @@ def find_users_with_params_api(params):
 
     params_keys = {key for key in params}
 
-    # находим пересечения переданных параметров со всеми возможными
-    user_params = dict([(p, params.pop(p)) for p in user_params & params_keys])
-    profile_params = dict([(p, params.pop(p)) for p in profile_params & params_keys])
+    # находим пересечения переданных параметров со всеми возможными для поиска
+    user_params = dict(
+        map(optimize_params_keys, [(p, params.pop(p)) for p in user_params & params_keys])
+    )
+    # то же самое для Profile
+    profile_params = dict(
+        map(optimize_params_keys, [(p, params.pop(p)) for p in profile_params & params_keys])
+    )
 
     # при отсутствии совпадений
     if not (user_params or profile_params):
         return False, "Incorrect params", []
 
     # оптимизация номера телефона
-    phone = profile_params.get('phone')
-    if phone:
-        profile_params['phone'] = optimize_phone(str(phone))
+    if 'phone' in profile_params:
+        # в однозначном варианте
+        profile_params['phone'] = optimize_phone(str(profile_params['phone']))
+    elif 'phone__in' in profile_params:
+        # в многозначном варианте
+        # оптимизируем каждый переданный номер телефона
+        phones = profile_params['phone__in']
+        for i in range(len(phones)):
+            phones[i] = optimize_phone(phones[i])
 
     # осуществляем поиск по переданным параметрам
     users_data = set(
-        map(lambda u: u.profile,  # преобразование в профиль
+        map(lambda user: user.profile,  # преобразуем в модель Profile
             User.objects.filter(is_superuser=False, **user_params).all())
     )
+
     profiles_data = set(
-        Profile.objects.filter(**profile_params).all()
+        filter(lambda profile: not profile.user.is_superuser,  # убираем суперпользователей
+               Profile.objects.filter(**profile_params).all())
     )
 
-    # собираем результаты
+    # находим результат (совпадения или что-то одно,
+    # в зависимости от переданных параметров)
     if user_params and profile_params:
-        result = users_data & profiles_data
+        result = users_data & profiles_data  # пересечения
     else:
-        result = users_data if user_params else profiles_data
+        result = users_data if user_params else profiles_data  # или что-то одно
 
-    # убираем суперпользователей (из profiles_data)
-    result = filter(lambda profile: not profile.user.is_superuser, result)
     # сортируем и обрезаем до n_users
     result = list(sorted(result, key=sorting, reverse=reverse_sorting))[:n_users]
     # преобразуем полные/краткие (full_req) данные в словари
-    result = list(map(lambda r: r.to_dict(all_req=full_req), result))
+    result = list(map(lambda r: r.to_dict(all_req=full_req, api=True), result))
 
     if result:
         return True, "Ok", result

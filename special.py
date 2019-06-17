@@ -1,4 +1,3 @@
-from django.http import JsonResponse
 from datetime import datetime
 import os
 import logging
@@ -27,34 +26,28 @@ def to_path(*args, static=True):
     return os.path.join('static', *args) if static else os.path.join(*args)
 
 
-# конвертирование корзины вида {'id1': n1, 'id2': n2} в строку
+# конвертирование корзины вида {'id1': n1, 'id2': n2}
+# в строку (для Profile)
 def basket_to_str(basket):
     return ';'.join(f'{product_id}*{basket[product_id]}' for product_id in basket) if basket else ''
 
 
-# конвертирование строки вида 'id1*n1;id2*n2' в корзину
+# конвертирование строки вида 'id1*n1;id2*n2'
+# в корзину (для Profile)
 def str_to_basket(s):
     return dict([position.split('*') for position in s.split(';')]) if s else dict()
 
 
-# конвертирование характеристики вида {'property1': value1, 'property2': value2} в строку
+# конвертирование характеристики вида {'property1': value1, 'property2': value2}
+# в строку (для Product)
 def characteristics_to_str(ch):
     return ';'.join(f'{prop}={ch[prop]}' for prop in ch) if ch else ''
 
 
-# конвертирование строки вида 'property1=value1;property2=value2' в характеристики
+# конвертирование строки вида 'property1=value1;property2=value2'
+# в характеристики (для Product)
 def str_to_characteristics(s):
     return dict([prop.split('=') for prop in s.split(';')]) if s else dict()
-
-
-# создание унифицированного ответа от API
-def make_success(state=True, message='Ok', **kwargs):
-    data = {'success': state}
-    if message == 'Ok':
-        message = 'Ok' if state else 'Unknown Error'
-    data['message'] = message
-    data.update(kwargs)
-    return JsonResponse(data)
 
 
 # генерация токена
@@ -124,16 +117,6 @@ def get_users_sort(sorting):
 
 def optimize_phone(phone):
     return phone[phone.index('9'):] if '9' in phone else phone
-
-
-def get_bool(val):
-    a = val is True
-    b = type(val) is str and val.lower() in {'true', 't', 'y', '+'}
-    c = type(val) is str and val.isdigit() and int(val) > 0
-    d = type(val) is int and val > 0
-    if a or b or c or d:
-        return True
-    return False
 
 
 class SizeError(Exception):

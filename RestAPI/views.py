@@ -3,69 +3,6 @@ from django.contrib.auth import authenticate
 from .db_models_funcs import *
 
 
-# оптимизация переданных в запросе параметров {'param': ['e']} -> {'param': 'e'};
-# {'param': ['e1', 'e2', 'e3']}
-# strict=True -> {'param': 'e1'};
-# strict=False  -> {'param': ['e1', 'e2', 'e3']}
-def get_params(request, strict=True):
-    params = dict(request.query_params)
-    for arg in params:
-        if type(params[arg]) is list and \
-                (strict or (not strict and len(params[arg]) == 1)):
-            params[arg] = params[arg][0]
-    return params
-
-
-def check_token(params):
-    if not params.get('token'):
-        return False, "token missed"
-    try:
-        profile = Profile.objects.get(token=params.pop('token'))
-        if profile.user.is_active:
-            return True, profile.user
-        return False, "User was deleted"
-    except Profile.DoesNotExist:
-        return False, "token is wrong"
-
-
-def find_user(params):
-    keys = ['id', 'username', 'email', 'phone', 'token']
-    k = None
-    for k in keys:
-        if k in params:
-            params = {k: params[k]}
-            keys = None  # индикатор, что нужный ключ нашёлся
-            break
-    if keys:
-        return False, f"{'/'.join(keys)} missed"
-    try:
-        if k in {'phone', 'token'}:
-            if k == 'phone':
-                params[k] = optimize_phone(params[k])
-            profile = Profile.objects.get(**params)
-            if profile.user.is_superuser:
-                raise User.DoesNotExist
-            return True, profile.user
-        return True, User.objects.get(is_superuser=False, **params)
-    except User.DoesNotExist:
-        return False, f"User {k}={params[k]} does not exist"
-
-
-def find_product(params):
-    keys = ['id', 'name']
-    for k in keys:
-        if k in params:
-            params = {k: params[k]}
-            keys = None  # индикатор, что нужный ключ нашёлся
-            break
-    if keys:
-        return False, f"{'/ '.join(keys)} missed"
-    try:
-        return True, Product.objects.get(**params)
-    except Product.DoesNotExist:
-        return False, f"Product {k}='{params[k]}' does not exist"
-
-
 class AuthorizationAPI(APIView):
     """ API для получения токена / регистрации пользователей. """
     def get(self, request, req):
@@ -104,7 +41,7 @@ class UserAPI(APIView):
         if req not in {'me', 'one', 'all', 'params'}:
             return make_success(False, "Bad request")
         try:
-            params = get_params(request)
+            params = get_params(request, find_complex=True)
             ok, result = check_token(params)  # корректность токена
             if ok:
                 token_user = result
@@ -113,8 +50,7 @@ class UserAPI(APIView):
 
             # получение своих данных
             if req == 'me':
-                user_data = token_user.profile.to_dict(all_req=True)
-                user_data['photo'] = make_url(user_data['photo'])  # абсолютный путь
+                user_data = token_user.profile.to_dict(all_req=True, api=True)
                 return make_success(user=user_data)
 
             # ограничение доступа
@@ -128,14 +64,12 @@ class UserAPI(APIView):
                     return make_success(False, search[1])
                 user = search[1]
 
-                user_data = user.profile.to_dict(all_req=True)
-                user_data['photo'] = make_url(user_data['photo'])  # абсолютный путь
-                return make_success(user=user_data)
+                return make_success(user=user.profile.to_dict(all_req=True, api=True))
 
             # получение кратких/полных данных всех пользователей
             if req == 'all':
                 return make_success(
-                    users=[u.profile.to_dict(all_req=params.get('full'))
+                    users=[u.profile.to_dict(all_req=params.get('full'), api=True)
                            for u in User.objects.filter(is_superuser=False).all()]
                 )
 

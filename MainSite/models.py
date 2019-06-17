@@ -199,7 +199,7 @@ class OrderSpot(models.Model):
 class Profile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     phone = models.CharField(max_length=10, unique=True, blank=True, null=True)
-    subscription = models.BooleanField(default=True)
+    email_subscription = models.BooleanField(default=True)
     has_photo = models.BooleanField(default=False)  # есть ли фото
     basket = models.CharField(max_length=2000, default='')
     date_changes = models.DateTimeField(auto_now_add=True)
@@ -215,13 +215,13 @@ class Profile(models.Model):
 
     def to_dict(self, id_req=True, first_name_req=False, last_name_req=False,
                 phone_req=False, email_req=False, username_req=True,
-                photo_req=False, subscr_req=False, basket_req=False,
+                photo_req=False, email_subscr_req=False, basket_req=False,
                 token_req=False, status_req=False, last_login_req=False,
-                all_req=False):
+                all_req=False, api=False):
         if all_req:
             (id_req, first_name_req, last_name_req,
              email_req, phone_req, login_req,
-             photo_req, subscr_req, basket_req,
+             photo_req, email_subscr_req, basket_req,
              token_req, status_req, last_login_req) = (True for _ in range(12))
         d = dict()
         if id_req:
@@ -236,8 +236,8 @@ class Profile(models.Model):
             d['email'] = self.user.email
         if username_req:
             d['username'] = self.user.username
-        if subscr_req:
-            d['subscription'] = self.subscription
+        if email_subscr_req:
+            d['email_subscription'] = self.email_subscription
         if basket_req:
             d['basket'] = str_to_basket(self.basket)
         if token_req:
@@ -250,9 +250,17 @@ class Profile(models.Model):
             d['last_login'] = str(self.user.last_login)
         if photo_req:
             if self.has_photo:
-                d['photo'] = to_path('profiles', f'{self.id}.png?{self.date_changes}')
+                if api:
+                    # абсолютный путь
+                    d['photo'] = make_url(to_path('profiles', f'{self.id}.png?{self.date_changes}'))
+                else:
+                    d['photo'] = to_path('profiles', f'{self.id}.png?{self.date_changes}')
             else:
-                d['photo'] = NO_PROFILE_PHOTO
+                if api:
+                    # абсолютный путь
+                    d['photo'] = make_url(NO_PROFILE_PHOTO)
+                else:
+                    d['photo'] = NO_PROFILE_PHOTO
         return d
 
     class Meta:
