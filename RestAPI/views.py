@@ -63,14 +63,14 @@ class UserAPI(APIView):
                 if not search[0]:
                     return make_success(False, search[1])
                 user = search[1]
-
                 return make_success(user=user.profile.to_dict(all_req=True, api=True))
 
             # получение кратких/полных данных всех пользователей
             if req == 'all':
+                active_only = get_bool(params.pop('active_only', True))
                 return make_success(
                     users=[u.profile.to_dict(all_req=params.get('full'), api=True)
-                           for u in User.objects.filter(is_superuser=False).all()]
+                           for u in User.objects.filter(is_superuser=False, is_active=active_only).all()]
                 )
 
             # поиск пользователей по параметрам
@@ -145,6 +145,7 @@ class UserAPI(APIView):
                 return make_success(False, "Access Error")
             # дезактивируем учетную запись
             user.is_active = False
+            user.token = None  # и удаляем токен
             save_with_date(user)
             return make_success()
         except Exception as e:
@@ -156,10 +157,50 @@ class ProductAPI(APIView):
     """ API для получения данных о товаре,
         размещения / редактирования / удаления товаров. """
     def get(self, request, req):
-        if req not in {'one', 'all', 'params'}:
+        if req not in {'one', 'params', 'all'}:
             return make_success(False, "Bad request")
         try:
-            pass
+            params = get_params(request, find_complex=True)
+            ok, result = check_token(params)  # корректность токена
+            if ok:
+                token_user = result
+            else:
+                return make_success(False, result)
+
+            # получение полных данных конкретного товара
+            if req == 'one':
+                search = find_product(params)
+                if not search[0]:
+                    return make_success(False, search[1])
+                product = search[1]
+                return make_success(product=product.to_dict(all_req=True, api=True))
+
+            # поиск товаров по параметрам
+            if req == 'params':
+                if not params:
+                    return make_success(False, "Parameters missed")
+
+                # ограничение доступа ко всему ассортименту
+                if not (params.get('category') or token_user.is_staff):
+                    return make_success(False, "category at least missed")
+
+                ok, message, products_data, products_no_data, n = find_products_with_params_api(
+                    params, full_access=token_user.is_staff
+                )
+                return make_success(ok, message, products=products_data, total_found=n)
+
+            # ограничение доступа
+            if not token_user.is_staff:
+                return make_success(False, "Access Error")
+
+            # получение кратких/полных данных всех товаров
+            if req == 'all':
+                active_only = get_bool(params.pop('active_only', True))
+                return make_success(
+                    products=[p.to_dict(all_req=params.get('full'), api=True)
+                              for p in Product.objects.filter(is_active=active_only).all()]
+                )
+
         except Exception as e:
             logger.error(f"ProductAPI (get: {req}) error: {e}")
             return make_success(False, "Server Error")

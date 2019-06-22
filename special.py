@@ -40,13 +40,13 @@ def str_to_basket(s):
 
 # конвертирование характеристики вида {'property1': value1, 'property2': value2}
 # в строку (для Product)
-def characteristics_to_str(ch):
+def properties_to_str(ch):
     return ';'.join(f'{prop}={ch[prop]}' for prop in ch) if ch else ''
 
 
 # конвертирование строки вида 'property1=value1;property2=value2'
 # в характеристики (для Product)
-def str_to_characteristics(s):
+def str_to_properties(s):
     return dict([prop.split('=') for prop in s.split(';')]) if s else dict()
 
 
@@ -57,7 +57,7 @@ def make_token():
 
 
 # собрать полный url к ресурсу
-def make_url(path: str):
+def make_abs_url(path: str):
     return SITE_URL + path.strip('/')
 
 
@@ -107,16 +107,85 @@ def process_profile_photo(photo_path, file_size):
 # получить ключ для сортировки найденных пользователей
 def get_users_sort(sorting):
     if sorting == ID_SORT:
-        return lambda profile: profile.user.id
+        return lambda user: user.id
     if sorting == NEW_SORT:
-        return lambda profile: profile.user.date_joined
+        return lambda user: user.date_joined
     if sorting == NAME_SORT:
-        return lambda profile: (profile.user.first_name, profile.user.last_name)
+        return lambda user: (user.first_name, user.last_name)
+    return lambda user: user.id  # по умолчанию
+
+
+# получить ключ для сортировки найденных пользователей
+def get_products_sort(sorting):
+    if sorting == ID_SORT:
+        return lambda product: product.id
+    if sorting == NEW_SORT:
+        return lambda product: product.date_joined
+    if sorting == NAME_SORT:
+        return lambda product: product.name
+    if sorting == PRICE_SORT:
+        return lambda product: product.price
+    if sorting == POPULAR_SORT:
+        return lambda product: -product.bought
     return lambda profile: profile.user.id  # по умолчанию
 
 
 def optimize_phone(phone):
     return phone[phone.index('9'):] if '9' in phone else phone
+
+
+def transliterate_to_en(rus):
+    d = {
+        'А': 'A',
+        'Б': 'B',
+        'В': 'V',
+        'Г': 'G',
+        'Д': 'D',
+        'Е': 'E',
+        'Ё': 'YO',
+        'Ж': 'ZH',
+        'З': 'Z',
+        'И': 'I',
+        'Й': 'Y',
+        'К': 'K',
+        'Л': 'L',
+        'М': 'M',
+        'Н': 'N',
+        'О': 'O',
+        'П': 'P',
+        'Р': 'R',
+        'С': 'S',
+        'Т': 'T',
+        'У': 'U',
+        'Ф': 'F',
+        'Х': 'KH',
+        'Ц': 'TS',
+        'Ч': 'CH',
+        'Ш': 'SH',
+        'Щ': 'SCH',
+        'Ъ': '',
+        'Ы': 'Y',
+        'Ь': '',
+        'Э': 'E',
+        'Ю': 'YU',
+        'Я': 'YA',
+        ' ': '_'
+    }
+    en = ""
+    for i in rus.strip():
+        if i in d:
+            en += d[i]
+    return en
+
+
+class Characteristic:
+    def __init__(self, kind, *args):
+        self.kind = kind
+        if kind == 'RANGE':
+            self.start = args[0]
+            self.end = args[1]
+        elif kind == 'CHOOSE':
+            self.options = list(args)
 
 
 class SizeError(Exception):

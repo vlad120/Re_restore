@@ -100,6 +100,7 @@ def find_user(params):
 
 def find_product(params):
     keys = ['id', 'name']
+    k = ''
     for k in keys:
         if k in params:
             params = {k: params[k]}
