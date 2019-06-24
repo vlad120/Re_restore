@@ -72,6 +72,29 @@ def save_with_date(obj):
         return False
 
 
+# оптимизация переданных в запросе параметров {'param': ['e']} -> {'param': 'e'};
+# {'param': ['e1', 'e2', 'e3']}
+# strict=True -> {'param': 'e1'};
+# strict=False  -> {'param': ['e1', 'e2', 'e3']}
+def get_params(request, strict=True, find_complex=False):
+    params = dict(request.query_params)
+    for arg in params:
+        if type(params[arg]) is list and \
+                (strict or (not strict and len(params[arg]) == 1)):
+            params[arg] = params[arg][0]
+        # если надо найти несколько аргументов в одном параметре
+        if find_complex and ',' in params[arg]:
+            param = [i.strip() for i in params[arg].split(',')]
+            for i in range(len(param)):
+                for param_type in {int, float}:
+                    try:
+                        param[i] = param_type(param[i])
+                    except ValueError:
+                        continue
+            params[arg] = param
+    return params
+
+
 # сохранить фото из request.data
 def save_photo(file, photo_path):
     with open(photo_path, 'wb+') as f:

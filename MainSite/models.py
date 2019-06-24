@@ -33,7 +33,7 @@ class Category(models.Model):
         return '<Category {}>'.format(self.name)
 
     def __str__(self):
-        return f'Category {self.name}'
+        return f'Категория {self.name}'
 
     def to_dict(self, *fields, **kwargs):
         d = {'id': self.id}
@@ -46,30 +46,37 @@ class Category(models.Model):
         if is_need('rus_name'):
             d['rus_name'] = self.rus_name
         if is_need('link'):
-            link = [self.name]
-            curr = self
-            while curr.parent:  # собираем родительские категории
-                curr = curr.parent
-                link.append(curr.name)
-            # переворачиваем полученные категории и собираем ссылку
+            # список всех родительских категорий (включая себя) преобразуем в список их названий
+            link = [c.name for c in self.collect_parents()]
             if api:
-                d['link'] = make_abs_url('/'.join(reversed(link)))
+                d['link'] = make_abs_url('/'.join(link))
             else:
-                d['link'] = '/'.join(reversed(link))
+                d['link'] = '/'.join(link)
         if is_need('all_links'):
-            categories = [self]
-            curr = self
-            while curr.parent:  # собираем родительские категории
-                curr = curr.parent
-                categories.append(curr)
-            # переворачиваем полученные категории и преобразуем в ссылки
-            d['link'] = [c.to_dict('link',  api=api).get('link') for c in reversed(categories)]
+            # преобразуем в ссылки список родительских категорий (включая себя)
+            d['link'] = [c.to_dict('link',  api=api).get('link') for c in self.collect_parents()]
         if is_need('characteristics'):
-            d['en_rus_characteristics'] = str_to_properties(self.en_rus_characteristics)
-            d['characteristics'] = str_to_properties(self.characteristics)
+            characteristics = dict()
+            en_rus_characteristics = dict()
+            # собираем характеристики у всех родительских категорий (включая в себя)
+            for c in self.collect_parents():
+                characteristics.update(str_to_properties(c.characteristics))
+                en_rus_characteristics.update(str_to_properties(c.en_rus_characteristics))
+            d['characteristics'] = characteristics
+            d['en_rus_characteristics'] = en_rus_characteristics
         if is_need('active'):
             d['active'] = self.is_active
         return d
+
+    # собрать все родительские категории, включая себя
+    # список начинается с корневой и заканчивается текущей
+    def collect_parents(self):
+        categories = [self]
+        curr = self
+        while curr.parent:
+            curr = curr.parent
+            categories.append(curr)
+        return reversed(categories)
 
     class Meta:
         verbose_name = "Категория"
@@ -85,7 +92,7 @@ class Producer(models.Model):
         return '<Producer #{} {}>'.format(self.id, self.name)
 
     def __str__(self):
-        return f'Producer #{self.id}'
+        return f'Производитель {self.name} (#{self.id})'
 
     def to_dict(self, *fields, **kwargs):
         d = {'id': self.id}
@@ -124,7 +131,7 @@ class Product(models.Model):
         return '<Product #{} {} {} * {}rub>'.format(self.id, self.name, self.count, self.price)
 
     def __str__(self):
-        return f'Product #{self.id}'
+        return f'Товар {self.name} (#{self.id})'
 
     def to_dict(self, *fields, **kwargs):
         d = {'id': self.id}
@@ -186,19 +193,19 @@ class Product(models.Model):
 
 
 class Rate(models.Model):
-    general = models.PositiveSmallIntegerField(max_length=10)
+    general = models.PositiveSmallIntegerField()
     content = models.CharField(max_length=300, blank=True, null=True)
-    len_photos = models.PositiveSmallIntegerField(max_length=5, default=0, blank=True)
+    len_photos = models.PositiveSmallIntegerField(default=0, blank=True)
     product = models.OneToOneField(Product, on_delete=models.CASCADE)
     status = models.CharField(max_length=3, default="MOD")  # MOD (moderate) / REF (refused) / OK
-    user = models.ForeignKey('User', on_delete=models.SET_NULL)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
     date_created = models.DateField(auto_now_add=True)
 
     def __repr__(self):
         return '<Rate #{} {} from user #{}>'.format(self.id, '*' * self.general, self.user_id)
 
     def __str__(self):
-        return f'Rate #{self.id}'
+        return f'Отзыв #{self.id} от пользователя {self.user.username}'
 
     def to_dict(self, *fields, **kwargs):
         d = {'id': self.id}
@@ -241,7 +248,7 @@ class Order(models.Model):
     total = models.PositiveIntegerField()
     products = models.CharField(max_length=2000)
     status = models.CharField(max_length=10, default="processing")
-    user = models.ForeignKey('User', on_delete=models.SET_NULL, blank=True, null=True)
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, blank=True, null=True)
     order_spot = models.ForeignKey('OrderSpot', on_delete=models.PROTECT, blank=True, null=True)
     date_created = models.DateTimeField(auto_now_add=True)
 
@@ -249,12 +256,12 @@ class Order(models.Model):
         return '<Order #{} {} {}rub>'.format(self.id, self.status, self.total)
 
     def __str__(self):
-        return f'Order #{self.id}'
+        return f'Заказ #{self.id} от пользователя {self.user.username} (создан {self.date_created})'
 
     def to_dict(self, *fields, **kwargs):
         d = {'id': self.id}
         all_req = kwargs.pop('all', False)
-        api = kwargs.pop('api', False)
+        # api = kwargs.pop('api', False)
         is_need = lambda f: is_need_field(f, all_req, fields, kwargs)
 
         if is_need('total'):
@@ -289,7 +296,7 @@ class OrderSpot(models.Model):
         return '<OrderSpot #{} {} {}>'.format(self.id, self.name, self.state)
 
     def __str__(self):
-        return f'OrderSpot #{self.id}'
+        return f'Пункт выдачи заказов #{self.id} {self.name}'
 
     def to_dict(self, *fields, **kwargs):
         d = {'id': self.id}
@@ -319,7 +326,7 @@ class OrderSpot(models.Model):
 
 
 class Profile(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, primary_key=True)
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
     phone = models.CharField(max_length=10, unique=True, blank=True, null=True)
     email_subscription = models.BooleanField(default=True)
     has_photo = models.BooleanField(default=False)  # есть ли фото
@@ -333,7 +340,7 @@ class Profile(models.Model):
         return '<UserProfile #{} {}>'.format(self.user.id, self.user.username)
 
     def __str__(self):
-        return f'User profile #{self.user.id}'
+        return f'Профиль пользователя {self.user.username} (#{self.user.id})'
 
     def to_dict(self, *fields, **kwargs):
         d = {'id': self.id}

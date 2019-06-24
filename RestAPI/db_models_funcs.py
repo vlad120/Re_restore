@@ -230,9 +230,10 @@ def find_users_with_params_api(params):
     profile_params = dict(('profile__' + p, profile_params[p]) for p in profile_params)
     user_params.update(profile_params)  # объединяем параметры
     # осуществляем поиск
-    result = set(User.objects.filter(user__is_superuser=False,
-                                     user__is_active=active_only,
-                                     **user_params).all())
+    result = User.objects.filter(
+        is_superuser=False,
+        is_active=active_only
+    ).filter(**user_params).all()
 
     # сортируем и обрезаем до n_users
     result = list(sorted(result, key=sorting, reverse=reverse_sorting))[:n_users]
@@ -242,11 +243,7 @@ def find_users_with_params_api(params):
     if result:
         return make_return(u=result)
     else:
-        # делаем красивое сообщение о том, что ничего не найдено
-        user_params.update(profile_params)
-        user_params = '; '.join([f'{p}={user_params[p]}' for p in user_params])
-        message = f"Users with params '{user_params}' do not exist"
-        return make_return(m=message)
+        return make_return(m="Not found")
 
 
 # поиск товаров по параметрам
@@ -254,8 +251,8 @@ def find_products_with_params_api(params, full_access=False):
     def make_return(state=True, m="Ok", p=[], p_no=[], total_found=0):
         return state, m, p, p_no, total_found
 
-    def write_incorrect(p):
-        errors[p] = "Incorrect"
+    def write_incorrect(p, m="Incorrect"):
+        errors[p] = m
 
     def check_range(lst, p, val_type, *checks):
         # проверка на количество (2 для range) и на нужный тип значений
@@ -305,12 +302,17 @@ def find_products_with_params_api(params, full_access=False):
 
     if available_only:
         # если нужны только те, что в наличии
-        products = Product.objects.filter(is_active=active_only, count__gt=0, **product_params)
+        products = Product.objects.filter(
+            is_active=active_only,
+            count__gt=0
+        ).filter(**product_params)
     else:
-        products = Product.objects.filter(is_active=active_only, **product_params)
+        products = Product.objects.filter(
+            is_active=active_only
+        ).filter(**product_params)
 
     # фильтр по параметрам с множеством значений
-    category = product_params.get('category')
+    category = product_params.pop('category', None)
     if category:
         if type(category) is list:
             products = products.filter(category__name__in=category)
@@ -321,7 +323,7 @@ def find_products_with_params_api(params, full_access=False):
 
     # фильтр по параметрам с разбегом значений
     for p in ['count', 'bought', 'len_photos', 'price']:
-        curr = product_params.get(p)
+        curr = product_params.pop(p, None)
         if curr:
             if type(curr) is list:
                 if check_range(curr, p, int):
@@ -333,33 +335,11 @@ def find_products_with_params_api(params, full_access=False):
             else:
                 write_incorrect(p)
 
-    # поиск по характеристикам
-    characteristics = product_params.get('characteristics')
-    if characteristics:
-        if type(str) is str:
-            if ';' in characteristics and '=' in characteristics:
-                characteristics = str_to_properties(characteristics)
-                found = set()
-                for product in products:
-                    p_characteristics = str_to_properties(product.characteristics)
-                    ok = True
-                    for key in characteristics:
-                        # если ключа нет в характеристиках
-                        # или занчения характеристик не совпадают
-                        if not (key in p_characteristics and
-                                characteristics[key] == p_characteristics[key]):
-                            ok = False  # пропускаем продукт
-                    if ok:
-                        found.add(product)
-                products = found
-            else:
-                write_incorrect('characteristics')
-        else:
-            write_incorrect('characteristics')
+    products = products.all()  # ищем в БД по предыдущим параметрам
 
-    # поиск по id, названию и описанию
-    search = product_params.get('search')
-    if search:
+    # поиск по id, названию, описанию и характеристикам
+    search = product_params.pop('search', None)
+    if search and products:
         result_id = []
         # пытаемся найти по id (артиклу)
         if type(search) is int:
@@ -375,17 +355,34 @@ def find_products_with_params_api(params, full_access=False):
         for i in range(3):
             products += result1[i] + result2[i]
         # убираем одинаковые
-        products = list(frozenset(products))
+        products = frozenset(products)
+
+    # поиск по характеристикам
+    if products and category and params:
+        try:  # пытаемся найти категорию в БД
+            category = Category.objects.get(name=category)
+        except Category.DoesNotExist:
+            write_incorrect('characteristics', "Incorrect category")
+            category = None
+        if category:
+            products = search_products_by_characteristics(params, products, category, joined_result=True)
+    # если остались параметры (возможно,
+    # именно для поиска по хар-кам), но нет категории
+    elif params and not category:
+        write_incorrect('characteristics', "category missed")
 
     # сортируем
-    products = frozenset(sorted(products, key=sorting, reverse=reverse_sorting))
+    products = list(sorted(products, key=sorting, reverse=reverse_sorting))
     total_found = len(products)  # запоминаем общее количество найденного
-    # и обрезаем до нужного нтервала
-    try:
+    try:  # и обрезаем до нужного нтервала
         products = products[range_products[0]:range_products[1]]
     except IndexError:
         if total_found > 11:
             products = products[-12:]
+
+    # если ничего не нашлось, просто завершаем работу
+    if not products:
+        return make_return(m="Not found")
 
     # если нужны товары не в наличии тоже
     if not available_only:
@@ -401,16 +398,10 @@ def find_products_with_params_api(params, full_access=False):
         # преобразуем полные/краткие (full_req) данные в словари
         products = list(map(lambda r: r.to_dict(all_req=full_req, api=True), products))
 
-    if products or products_no:
-        return make_return(p=products, p_no=products_no, total_found=total_found)
-    else:
-        # делаем красивое сообщение о том, что ничего не найдено
-        product_params = '; '.join([f'{p}={product_params[p]}' for p in product_params])
-        message = f"Products with params '{product_params}' do not exist"
-        return make_return(m=message)
+    return make_return(p=products, p_no=products_no, total_found=total_found)
 
 
-def search_products_by_name(name, products):
+def search_products_by_name(name, products, joined_result=False):
     name = name.lower()  # already stripped
     full = []
     part = []
@@ -438,10 +429,10 @@ def search_products_by_name(name, products):
     consist = list(map(lambda c: c[0], sorted(consist, key=lambda c: c[1])))
 
     # объединяем и возвращаем найденное в порядке соответствия
-    return [full, part, consist]
+    return full + part + consist if joined_result else [full, part, consist]
 
 
-def search_products_by_description(text, products):
+def search_products_by_description(text, products, joined_result=False):
     text = text.lower()  # already stripped
     part = []
     consist = []
@@ -465,4 +456,51 @@ def search_products_by_description(text, products):
     consist = list(map(lambda c: c[0], sorted(consist, key=lambda c: c[1])))
 
     # объединяем и возвращаем найденное в порядке соответствия
-    return [[], part, consist]
+    return part + consist if joined_result else [[], part, consist]
+
+
+def search_products_by_characteristics(characteristics, products,
+                                       category, joined_result=False, full_only=True):
+    category_characteristics = dict()
+    # собираем полные хар-ки у данной категории
+    for c in category.collect_parents():
+        category_characteristics.update(str_to_properties(c.characteristics))
+
+    # находим те хар-ки, что присуще искомой каетегории
+    intersections = {i for i in characteristics} & {i for i in category_characteristics}
+    # оставляем в characteristics только их
+    characteristics = dict([(i, characteristics[i]) for i in intersections])
+
+    if full_only:
+        full = []
+        for product in products:
+            curr = str_to_properties(product.characteristics)  # получаем хар-ки товара
+            ok = True
+            for key in characteristics:
+                if characteristics[key] != curr.get(key):
+                    # при несовпадении хотя бы одного параметра
+                    # переходим к следующему товару
+                    ok = False
+                    break
+            if ok:
+                full.append(product)
+        return full if joined_result else [full, [], []]
+    else:
+        full = []
+        part = []
+        n = len(characteristics)  # количество необходимых для полного совпадения параметров
+        for product in products:
+            curr = str_to_properties(product.characteristics)  # получаем хар-ки товара
+            ok = 0
+            for key in characteristics:
+                if characteristics[key] == curr.get(key):
+                    ok += 1  # подсчитываем совпадения
+            if ok == n:
+                full.append(product)
+            elif ok > 0:
+                part.append((product, ok))
+
+        # сортируем по количеству совпадений и оставляем только сами продукты
+        part = list(map(lambda p: p[0], sorted(part, key=lambda p: -p[1])))
+        return full + part if joined_result else [full, part, []]
+
