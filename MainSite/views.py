@@ -20,7 +20,7 @@ def main_page(request):
 
     return render(
         request, "main.html",
-        {'menu_items': [c.to_dict() for c in Category.objects.filter(active=True)],
+        {'menu_items': [c.to_dict('rus_name', 'link') for c in Category.objects.filter(is_active=True, parent=None)],
          'len_basket': 0,
          'basket': [],
          'errors': {'authorization': {'password': None,

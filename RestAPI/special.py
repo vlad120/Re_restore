@@ -1,5 +1,6 @@
 from django.http import JsonResponse
-from MainSite.models import Category, Product, Order, Profile
+from MainSite.models import Category, Product, Order, \
+                            Profile, Rate, Characteristic
 from django.contrib.auth.models import User
 from special import *
 
@@ -35,13 +36,6 @@ def check_token(params):
         return False, "User was deleted"
     except Profile.DoesNotExist:
         return False, "token is wrong"
-
-
-# когда у параметра много значений (список) изменяем ключи
-# (добовляем '__in' для QuerySet)
-def optimize_params_keys(param):
-    key, val = param
-    return (key + '__in', val) if type(val) is list else param
 
 
 def find_user(params):

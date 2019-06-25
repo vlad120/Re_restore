@@ -78,8 +78,8 @@ class UserAPI(APIView):
                 if not params:
                     return make_success(False, f"Parameters missed")
 
-                ok, message, users_data = find_users_with_params_api(params)
-                return make_success(ok, message, users=users_data)
+                ok, message, users_data, errors = find_users_with_params_api(params)
+                return make_success(ok, message, users=users_data, errors=errors)
 
         except Exception as e:
             logger.error(f"UserAPI (get: {req}) error: {e}")
@@ -184,10 +184,11 @@ class ProductAPI(APIView):
                 if not (params.get('category') or token_user.is_staff):
                     return make_success(False, "category at least missed")
 
-                ok, message, products_data, products_no_data, n = find_products_with_params_api(
-                    params, full_access=token_user.is_staff
-                )
-                return make_success(ok, message, products=products_data, total_found=n)
+                ok, message, products_data, \
+                    products_no_data, n, errors = find_products_with_params_api(params,
+                                                                                full_access=token_user.is_staff)
+                return make_success(ok, message, products=products_data,
+                                    products_no=products_no_data, total_found=n, errors=errors)
 
             # ограничение доступа
             if not token_user.is_staff:

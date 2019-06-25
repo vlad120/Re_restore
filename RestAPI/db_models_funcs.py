@@ -42,28 +42,21 @@ def change_user_info_api(user, params, data):
             write_change(*args)
 
     def ch_phone(val, *args):
-        phone = str(val).strip()
-        plus = phone[0] == '+'
-        phone = phone.strip('+')
-        if phone.isdigit() and (phone[0] == '7' or (phone[0] in '89' and not plus)):
-            if phone[0] in '78' and len(phone) == 11:
-                phone = '+7' + phone[1:]
-            elif len(phone) == 10 and phone[0] == '9':
-                phone = '+7' + phone
-            else:
-                write_error("Incorrect format", *args)
-        else:
+        try:
+            phone = optimize_phone(val)
+        except ValueError:
             write_error("Incorrect format", *args)
-        if phone == user.profile.phone:
-            write_error("Nothing to change", *args)
         else:
-            # занятость номера телефона
-            if Profile.objects.filter(phone=phone).exists():
-                write_error("Already used", *args)
-            # при отсутствии ошибок
-            if not errors['phone_change']:
-                user.profile.phone = phone
-                write_change(*args)
+            if phone == user.profile.phone:
+                write_error("Nothing to change", *args)
+            else:
+                # занятость номера телефона
+                if Profile.objects.filter(phone=phone).exists():
+                    write_error("Already used", *args)
+                # при отсутствии ошибок
+                if not errors['phone_change']:
+                    user.profile.phone = phone
+                    write_change(*args)
 
     def ch_email(val, *args):
         val = val.strip()
@@ -181,7 +174,10 @@ def change_user_info_api(user, params, data):
 # поиск пользователей по параметрам
 def find_users_with_params_api(params):
     def make_return(state=True, m="Ok", u=[]):
-        return state, m, u
+        return state, m, u, errors
+
+    def write_incorrect(p, m="Incorrect"):
+        errors[p] = m
 
     # все возможные параметры для пользователя и его профиля
     user_params = {
@@ -192,6 +188,8 @@ def find_users_with_params_api(params):
         'email_subscription', 'has_photo'
         'is_users_editor', 'is_goods_editor'
     }
+
+    errors = dict()
 
     n_users = params.pop('n', 5)  # сколько выдать пользователей
     full_req = get_bool(params.pop('full', False))  # подробная информация о каждом
@@ -218,13 +216,24 @@ def find_users_with_params_api(params):
     # оптимизация номера(-ов) телефона(-ов)
     if 'phone' in profile_params:
         # в однозначном варианте
-        profile_params['phone'] = optimize_phone(str(profile_params['phone']))
+        try:
+            profile_params['phone'] = optimize_phone(profile_params['phone'])
+        except ValueError:
+            profile_params.pop('phone')
     elif 'phone__in' in profile_params:
         # в многозначном варианте
         # оптимизируем каждый переданный номер телефона
-        phones = profile_params['phone__in']
-        for i in range(len(phones)):
-            phones[i] = optimize_phone(phones[i])
+        phones = []
+        for phone in profile_params['phone__in']:
+            try:
+                phones.append(optimize_phone(phone))
+            except ValueError:
+                write_incorrect('phone', "Some phone numbers are incorrect")
+        if phones:
+            profile_params['phone__in'] = phones
+        else:
+            profile_params.pop('phone__in')
+            write_incorrect('phone')
 
     # переформатируем параметры профиля для filter
     profile_params = dict(('profile__' + p, profile_params[p]) for p in profile_params)
@@ -249,7 +258,7 @@ def find_users_with_params_api(params):
 # поиск товаров по параметрам
 def find_products_with_params_api(params, full_access=False):
     def make_return(state=True, m="Ok", p=[], p_no=[], total_found=0):
-        return state, m, p, p_no, total_found
+        return state, m, p, p_no, total_found, errors
 
     def write_incorrect(p, m="Incorrect"):
         errors[p] = m
@@ -259,6 +268,8 @@ def find_products_with_params_api(params, full_access=False):
         if len(lst) != 2 or not set(filter(lambda val: type(val) is val_type, lst)):
             write_incorrect(p)
             return False
+        if val_type is int and lst[0] > lst[1]:
+            lst[0], lst[1] = lst[1], lst[0]
         # дополнительные проверки
         if checks:
             for check in checks:
@@ -285,33 +296,29 @@ def find_products_with_params_api(params, full_access=False):
     if not active_only and not full_access:  # проверка на доступ к просмотру неактивных товаров
         active_only = True
 
-    sorting = get_products_sort(params.pop('sort', ID_SORT))  # ключ сортировки
+    sorting = params.pop('sort', None)
+    if sorting:
+        sorting = get_products_sort(sorting)  # ключ сортировки
     reverse_sorting = get_bool(params.pop('reverse_sort', False))  # обратная сортировка
 
     params_keys = {key for key in params}
 
     # находим пересечения переданных параметров со всеми возможными для поиска
-    # заодно приводим в нужный тип их значения
-    product_params = dict(
-        map(optimize_params_keys, [(p, params.pop(p)) for p in product_params & params_keys])
-    )
+    product_params = dict([(p, params.pop(p)) for p in product_params & params_keys])
 
     # при отсутствии совпадений
     if not product_params:
         return make_return(False, "Incorrect params")
 
+    search = product_params.pop('search', None)  # заранее вытаскиваем search
+
     if available_only:
         # если нужны только те, что в наличии
-        products = Product.objects.filter(
-            is_active=active_only,
-            count__gt=0
-        ).filter(**product_params)
+        products = Product.objects.filter(is_active=active_only, count__gt=0)
     else:
-        products = Product.objects.filter(
-            is_active=active_only
-        ).filter(**product_params)
+        products = Product.objects.filter(is_active=active_only)
 
-    # фильтр по параметрам с множеством значений
+    # фильтр по параметрам с множеством значений / единственным значением
     category = product_params.pop('category', None)
     if category:
         if type(category) is list:
@@ -337,15 +344,14 @@ def find_products_with_params_api(params, full_access=False):
 
     products = products.all()  # ищем в БД по предыдущим параметрам
 
-    # поиск по id, названию, описанию и характеристикам
-    search = product_params.pop('search', None)
+    # поиск по id, названию и описанию
     if search and products:
         result_id = []
         # пытаемся найти по id (артиклу)
-        if type(search) is int:
-            product = set(filter(lambda pro: pro.id == search, products))
+        if type(search) is int or (type(search) is str and search.isdigit()):
+            product = set(filter(lambda pro: pro.id == int(search), products))
             if product:
-                result_id.append(product)
+                result_id += list(product)
             search = str(search)
         result1 = search_products_by_name(search, products)
         result2 = search_products_by_description(search, products)
@@ -363,16 +369,21 @@ def find_products_with_params_api(params, full_access=False):
             category = Category.objects.get(name=category)
         except Category.DoesNotExist:
             write_incorrect('characteristics', "Incorrect category")
-            category = None
-        if category:
+        else:
             products = search_products_by_characteristics(params, products, category, joined_result=True)
     # если остались параметры (возможно,
     # именно для поиска по хар-кам), но нет категории
     elif params and not category:
         write_incorrect('characteristics', "category missed")
 
-    # сортируем
-    products = list(sorted(products, key=sorting, reverse=reverse_sorting))
+    # преобразуем в массив и сортируем
+    products = list(products)
+    if sorting:
+        products = sorted(products, key=sorting, reverse=reverse_sorting)
+    if reverse_sorting:
+        products = reversed(products)
+    products = list(products)
+
     total_found = len(products)  # запоминаем общее количество найденного
     try:  # и обрезаем до нужного нтервала
         products = products[range_products[0]:range_products[1]]
@@ -387,16 +398,17 @@ def find_products_with_params_api(params, full_access=False):
     # если нужны товары не в наличии тоже
     if not available_only:
         # выбираем продукты, что не в наличии
-        products_no = frozenset(filter(lambda p: p.count > 0, products))
+        # (в данном случае мы их тоже искали)
+        products_no = list(filter(lambda p: p.count < 1, products))
         # убираем их из products
-        products = list(products - products_no)
+        products = list(filter(lambda p: p not in products_no, products))
         # преобразуем полные/краткие (full_req) данные в словари
-        products_no = list(map(lambda r: r.to_dict(all_req=full_req, api=True), products_no))
-        products = list(map(lambda r: r.to_dict(all_req=full_req, api=True), products))
+        products_no = list(map(lambda r: r.to_dict(all=full_req, api=True), products_no))
+        products = list(map(lambda r: r.to_dict(all=full_req, api=True), products))
     else:
         products_no = []
         # преобразуем полные/краткие (full_req) данные в словари
-        products = list(map(lambda r: r.to_dict(all_req=full_req, api=True), products))
+        products = list(map(lambda r: r.to_dict(all=full_req, api=True), products))
 
     return make_return(p=products, p_no=products_no, total_found=total_found)
 
@@ -461,13 +473,44 @@ def search_products_by_description(text, products, joined_result=False):
 
 def search_products_by_characteristics(characteristics, products,
                                        category, joined_result=False, full_only=True):
-    category_characteristics = dict()
-    # собираем полные хар-ки у данной категории
-    for c in category.collect_parents():
-        category_characteristics.update(str_to_properties(c.characteristics))
+    def check_range(lst, val_type):
+        # проверка на количество (2 для range) и на нужный тип значений
+        if len(lst) != 2 or not set(filter(lambda val: type(val) is val_type, lst)):
+            return False
+        # если первое значение больше, меняем их местами (для логики range)
+        if val_type is int and lst[0] > lst[1]:
+            lst[0], lst[1] = lst[1], lst[0]
+        return True
 
-    # находим те хар-ки, что присуще искомой каетегории
-    intersections = {i for i in characteristics} & {i for i in category_characteristics}
+    def compare_characteristics():
+        product_val = curr.get(key)
+        if not product_val:
+            return False
+
+        compare_val = characteristics[key]
+        val_type = category_characteristics[key]['value_type']
+
+        if type(compare_val) is list:
+            if val_type == 'RANGE':
+                if check_range(compare_val):
+                    if compare_val[0] <= product_val <= compare_val[1]:
+                        return True
+            elif val_type in {'CHOOSE', 'TEXT'}:
+                if product_val in compare_val:
+                    return True
+        elif type(compare_val) is str:
+            if val_type == 'BOOL':
+                if get_bool(product_val) == get_bool(compare_val):
+                    return True
+            elif val_type in {'CHOOSE', 'TEXT'}:
+                if str(product_val) == str(compare_val):
+                    return True
+        return False
+
+    category_characteristics = category.to_dict('characteristics')['characteristics']
+
+    # из переданных хар-ик находим те, что присуще искомой каетегории
+    intersections = {c for c in characteristics} & {c for c in category_characteristics}
     # оставляем в characteristics только их
     characteristics = dict([(i, characteristics[i]) for i in intersections])
 
@@ -477,8 +520,8 @@ def search_products_by_characteristics(characteristics, products,
             curr = str_to_properties(product.characteristics)  # получаем хар-ки товара
             ok = True
             for key in characteristics:
-                if characteristics[key] != curr.get(key):
-                    # при несовпадении хотя бы одного параметра
+                if not compare_characteristics():
+                    # при несовпадении / отсутствии хотя бы одного параметра
                     # переходим к следующему товару
                     ok = False
                     break
@@ -493,7 +536,7 @@ def search_products_by_characteristics(characteristics, products,
             curr = str_to_properties(product.characteristics)  # получаем хар-ки товара
             ok = 0
             for key in characteristics:
-                if characteristics[key] == curr.get(key):
+                if compare_characteristics():
                     ok += 1  # подсчитываем совпадения
             if ok == n:
                 full.append(product)

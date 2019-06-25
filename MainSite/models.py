@@ -8,6 +8,7 @@ from special import *
 # пути к фотографиям по умолчанию
 NO_GOODS_PHOTO = to_path('goods', 'NoPhoto.jpg')
 NO_PROFILE_PHOTO = to_path('profiles', 'NoPhoto.jpg')
+NO_PRODUCER_PHOTO = to_path('producers', 'NoPhoto.jpg')
 
 
 def is_need_field(f, all_req, fields, kwargs):
@@ -24,46 +25,49 @@ def is_need_field(f, all_req, fields, kwargs):
 class Category(models.Model):
     name = models.CharField(max_length=80, primary_key=True, unique=True)
     rus_name = models.CharField(max_length=100)
-    parent = models.OneToOneField('Category', on_delete=models.PROTECT, blank=True, null=True)
-    characteristics = models.CharField(max_length=3000)
-    en_rus_characteristics = models.CharField(max_length=3000)
+    parent = models.ForeignKey('Category', on_delete=models.PROTECT, blank=True, null=True, unique=False)
+    characteristics = models.TextField(max_length=3000, blank=True, null=True)
     is_active = models.BooleanField(default=True)
 
     def __repr__(self):
         return '<Category {}>'.format(self.name)
 
     def __str__(self):
-        return f'Категория {self.name}'
+        return f"{self.rus_name} ----- {self.name}"
 
     def to_dict(self, *fields, **kwargs):
-        d = {'id': self.id}
+        d = {'name': self.name}
         all_req = kwargs.pop('all', False)
         api = kwargs.pop('api', False)
         is_need = lambda f: is_need_field(f, all_req, fields, kwargs)
 
-        if is_need('name'):
-            d['name'] = self.name
         if is_need('rus_name'):
             d['rus_name'] = self.rus_name
         if is_need('link'):
             # список всех родительских категорий (включая себя) преобразуем в список их названий
             link = [c.name for c in self.collect_parents()]
             if api:
-                d['link'] = make_abs_url('/'.join(link))
+                d['link'] = make_abs_url('catalog/' + '/'.join(link))
             else:
-                d['link'] = '/'.join(link)
+                d['link'] = 'catalog/' + '/'.join(link)
         if is_need('all_links'):
             # преобразуем в ссылки список родительских категорий (включая себя)
-            d['link'] = [c.to_dict('link',  api=api).get('link') for c in self.collect_parents()]
+            d['all_links'] = [c.to_dict('link',  api=api).get('link') for c in self.collect_parents()]
         if is_need('characteristics'):
-            characteristics = dict()
-            en_rus_characteristics = dict()
-            # собираем характеристики у всех родительских категорий (включая в себя)
+            # собираем хар-ки у всех родительских категорий (включая себя)
+            self_characteristics = []
             for c in self.collect_parents():
-                characteristics.update(str_to_properties(c.characteristics))
-                en_rus_characteristics.update(str_to_properties(c.en_rus_characteristics))
+                self_characteristics += split_values_from_str(c.characteristics)
+            characteristics = dict()
+
+            for c in BASE_CHARACTERISTICS + self_characteristics:
+                # пытаемся найти хар-ку в БД
+                try:
+                    characteristic = Characteristic.objects.get(name=c)
+                    characteristics[c] = characteristic.to_dict(all=True)
+                except Characteristic.DoesNotExist:
+                    pass  # в случае чего, пропускаем
             d['characteristics'] = characteristics
-            d['en_rus_characteristics'] = en_rus_characteristics
         if is_need('active'):
             d['active'] = self.is_active
         return d
@@ -85,19 +89,20 @@ class Category(models.Model):
 
 class Producer(models.Model):
     name = models.CharField(max_length=100)
-    phone = models.CharField(max_length=10, blank=True, null=True)
+    phone = models.CharField(max_length=12, blank=True, null=True)
     email = models.CharField(max_length=254, blank=True, null=True)
+    has_photo = models.BooleanField(default=False)
 
     def __repr__(self):
         return '<Producer #{} {}>'.format(self.id, self.name)
 
     def __str__(self):
-        return f'Производитель {self.name} (#{self.id})'
+        return f"#{self.id} ----- {self.name}"
 
     def to_dict(self, *fields, **kwargs):
         d = {'id': self.id}
         all_req = kwargs.pop('all', False)
-        # api = kwargs.pop('api', False)
+        api = kwargs.pop('api', False)
         is_need = lambda f: is_need_field(f, all_req, fields, kwargs)
 
         if is_need('name'):
@@ -106,32 +111,96 @@ class Producer(models.Model):
             d['phone'] = self.phone
         if is_need('email'):
             d['email'] = self.email
+        if is_need('photo'):
+            d['photo'] = to_path('producers', f'{self.id}.png') if self.has_photo else NO_PRODUCER_PHOTO
+            if api:
+                d['photo'] = make_abs_url(d['photo'])
 
     class Meta:
         verbose_name = "Производитель"
         verbose_name_plural = "Производители"
 
 
+class Characteristic(models.Model):
+    """ 'other' characteristic group must be! """
+    name = models.CharField(max_length=50, primary_key=True)
+    rus = models.CharField(max_length=50)
+    value_type = models.CharField(max_length=6)
+    group = models.ForeignKey('CharacteristicGroup', on_delete=models.PROTECT, default='other', blank=True)
+
+    def __repr__(self):
+        return '<Characteristic {}>'.format(self.name)
+
+    def __str__(self):
+        return f"{self.rus} ----- {self.name}"
+
+    def to_dict(self, *fields, **kwargs):
+        d = {'name': self.name}
+        all_req = kwargs.pop('all', False)
+        # api = kwargs.pop('api', False)
+        is_need = lambda f: is_need_field(f, all_req, fields, kwargs)
+
+        if is_need('rus'):
+            d['rus'] = self.rus
+        if is_need('value_type'):
+            d['value_type'] = self.value_type
+        if is_need('group'):
+            d['group'] = self.group.to_dict(all=True)
+        return d
+
+    class Meta:
+        verbose_name = "Характеристика"
+        verbose_name_plural = "Характеристики"
+
+
+class CharacteristicGroup(models.Model):
+    """ 'other' characteristic group must be!
+        (it's default foreign key for characteristic)
+    """
+    name = models.CharField(max_length=50, primary_key=True)
+    rus = models.CharField(max_length=100, blank=True, null=True)
+
+    def __repr__(self):
+        return '<Characteristic Group {}>'.format(self.name)
+
+    def __str__(self):
+        return f"{self.rus} ----- {self.name}"
+
+    def to_dict(self, *fields, **kwargs):
+        d = {'name': self.name}
+        all_req = kwargs.pop('all', False)
+        # api = kwargs.pop('api', False)
+        is_need = lambda f: is_need_field(f, all_req, fields, kwargs)
+
+        if is_need('rus'):
+            d['rus'] = self.rus
+        return d
+
+    class Meta:
+        verbose_name = "Группа характеристик"
+        verbose_name_plural = "Группы характеристик"
+
+
 class Product(models.Model):
     name = models.CharField(max_length=80)
     producer = models.ForeignKey('Producer', on_delete=models.PROTECT)
-    description = models.CharField(max_length=15000)
+    description = models.TextField(max_length=15000)
     short_description = models.CharField(max_length=120)
-    characteristics = models.CharField(max_length=7000)
+    characteristics = models.TextField(max_length=7000)
     price = models.PositiveIntegerField()
     count = models.PositiveIntegerField()
     bought = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
     category = models.ForeignKey(Category, on_delete=models.PROTECT)
     len_photos = models.PositiveSmallIntegerField(default=0)  # количество фото
-    date_created = models.DateField(auto_now_add=True)
-    date_changes = models.DateTimeField(auto_now_add=True)
+    date_created = models.DateTimeField(auto_now_add=True)
+    date_changes = models.DateTimeField(auto_now=True)
 
     def __repr__(self):
         return '<Product #{} {} {} * {}rub>'.format(self.id, self.name, self.count, self.price)
 
     def __str__(self):
-        return f'Товар {self.name} (#{self.id})'
+        return f"#{self.id} ----- {self.name}"
 
     def to_dict(self, *fields, **kwargs):
         d = {'id': self.id}
@@ -162,9 +231,7 @@ class Product(models.Model):
         if is_need('category'):
             d['category'] = self.category.to_dict(all=True, characteristics=False)
         if is_need('link'):
-            d['link'] = f'{self.category.name}/{self.id}'
-            if api:
-                d['full_link'] = make_abs_url(d['full_link'])
+            d['link'] = f"{self.category.to_dict('link', api=api)['link']}/{self.id}"
         if is_need('photo'):
             if self.len_photos:
                 d['photo'] = to_path('goods', self.id, '1.png')
@@ -205,7 +272,7 @@ class Rate(models.Model):
         return '<Rate #{} {} from user #{}>'.format(self.id, '*' * self.general, self.user_id)
 
     def __str__(self):
-        return f'Отзыв #{self.id} от пользователя {self.user.username}'
+        return f"#{self.id} ----- от {self.user.username}"
 
     def to_dict(self, *fields, **kwargs):
         d = {'id': self.id}
@@ -256,7 +323,7 @@ class Order(models.Model):
         return '<Order #{} {} {}rub>'.format(self.id, self.status, self.total)
 
     def __str__(self):
-        return f'Заказ #{self.id} от пользователя {self.user.username} (создан {self.date_created})'
+        return f"#{self.id} ----- от {self.user.username} (создан {self.date_created})"
 
     def to_dict(self, *fields, **kwargs):
         d = {'id': self.id}
@@ -296,12 +363,11 @@ class OrderSpot(models.Model):
         return '<OrderSpot #{} {} {}>'.format(self.id, self.name, self.state)
 
     def __str__(self):
-        return f'Пункт выдачи заказов #{self.id} {self.name}'
+        return f"#{self.id} ----- {self.name}"
 
     def to_dict(self, *fields, **kwargs):
         d = {'id': self.id}
         all_req = kwargs.pop('all', False)
-        api = kwargs.pop('api', False)
         is_need = lambda f: is_need_field(f, all_req, fields, kwargs)
 
         if is_need('name'):
@@ -327,10 +393,10 @@ class OrderSpot(models.Model):
 
 class Profile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
-    phone = models.CharField(max_length=10, unique=True, blank=True, null=True)
+    phone = models.CharField(max_length=12, unique=True, blank=True, null=True)
     email_subscription = models.BooleanField(default=True)
     has_photo = models.BooleanField(default=False)  # есть ли фото
-    basket = models.CharField(max_length=2000, default='')
+    basket = models.CharField(max_length=2000, default='', blank=True)
     date_changes = models.DateTimeField(auto_now_add=True)
     token = models.CharField(max_length=TOKEN_LEN, blank=True, null=True)
     is_users_editor = models.BooleanField(default=False)
@@ -340,7 +406,7 @@ class Profile(models.Model):
         return '<UserProfile #{} {}>'.format(self.user.id, self.user.username)
 
     def __str__(self):
-        return f'Профиль пользователя {self.user.username} (#{self.user.id})'
+        return f"#{self.id} ----- {self.user.username}"
 
     def to_dict(self, *fields, **kwargs):
         d = {'id': self.id}
@@ -372,17 +438,11 @@ class Profile(models.Model):
             d['last_login'] = str(self.user.last_login)
         if is_need('photo'):
             if self.has_photo:
-                if api:
-                    # абсолютный путь
-                    d['photo'] = make_abs_url(to_path('profiles', f'{self.id}.png?{self.date_changes}'))
-                else:
-                    d['photo'] = to_path('profiles', f'{self.id}.png?{self.date_changes}')
+                d['photo'] = to_path('profiles', f'{self.id}.png?{self.date_changes}')
             else:
-                if api:
-                    # абсолютный путь
-                    d['photo'] = make_abs_url(NO_PROFILE_PHOTO)
-                else:
-                    d['photo'] = NO_PROFILE_PHOTO
+                d['photo'] = NO_PROFILE_PHOTO
+            if api:
+                d['photo'] = make_abs_url(d['photo'])
         if is_need('date_joined'):
             d['date_joined'] = str(self.user.date_joined)
         return d

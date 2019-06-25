@@ -20,6 +20,11 @@ PRICE_SORT = "PRICE"
 POPULAR_SORT = "POPULAR"
 NEW_SORT = "NEW"
 
+BASE_CHARACTERISTICS = [
+    'weight', 'made_in',
+    'warranty', 'color'
+]
+
 
 # получение корректного пути
 def to_path(*args, static=True):
@@ -41,13 +46,25 @@ def str_to_basket(s):
 # конвертирование характеристики вида {'property1': value1, 'property2': value2}
 # в строку (для Product)
 def properties_to_str(ch):
-    return ';'.join(f'{prop}={ch[prop]}' for prop in ch) if ch else ''
+    return ';'.join(f'{prop.strip()}={ch[prop].strip()}' for prop in ch) if ch else ''
 
 
 # конвертирование строки вида 'property1=value1;property2=value2'
 # в характеристики (для Product)
 def str_to_properties(s):
-    return dict([prop.split('=') for prop in s.split(';')]) if s else dict()
+    d = dict()
+    for prop in s.split(';'):
+        key, val = tuple(prop.split('='))
+        d[key.strip()] = val.strip()
+    return d
+
+
+def split_values_from_str(s, char=';'):
+    return [val.strip() for val in s.split(char)]
+
+
+def join_values_to_str(s, char=';'):
+    return char.join([val.strip() for val in s])
 
 
 # генерация токена
@@ -89,6 +106,7 @@ def get_params(request, strict=True, find_complex=False):
                 for param_type in {int, float}:
                     try:
                         param[i] = param_type(param[i])
+                        break
                     except ValueError:
                         continue
             params[arg] = param
@@ -150,11 +168,21 @@ def get_products_sort(sorting):
         return lambda product: product.price
     if sorting == POPULAR_SORT:
         return lambda product: -product.bought
-    return lambda profile: profile.user.id  # по умолчанию
+    return lambda product: product.id  # по умолчанию
 
 
 def optimize_phone(phone):
-    return phone[phone.index('9'):] if '9' in phone else phone
+    phone = str(phone).strip()
+    plus = phone[0] == '+'
+    phone = phone.lstrip('+')
+    if phone.isdigit():
+        if phone[0] == '7' or (phone[0] == '8' and not plus):
+            if len(phone) == 11:
+                return '+7' + phone[1:]
+        elif phone[0] == '9' and not plus:
+            if len(phone) == 10:
+                return '+7' + phone
+    raise ValueError
 
 
 def transliterate_to_en(rus):
